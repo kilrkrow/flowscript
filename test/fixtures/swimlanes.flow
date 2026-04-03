@@ -1,0 +1,30 @@
+---
+title: API Request Flow
+---
+
+@theme clean
+@direction TB
+
+#group Frontend
+  Show Loading
+  Render Results
+  Display Error
+
+#group API Gateway
+  Validate Token
+  Rate Limit Check
+  Route Request
+
+#group Backend
+  Query Database
+  Process Data
+  Return Response
+
+Show Loading -> Validate Token: "API call"
+Validate Token -> Rate Limit Check
+Rate Limit Check -> Route Request
+Route Request -> Query Database
+Query Database -> Process Data
+Process Data -> Return Response
+Return Response -> Render Results: "200 OK"
+Rate Limit Check -> Display Error: "429"

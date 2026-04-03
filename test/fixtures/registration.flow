@@ -1,0 +1,28 @@
+---
+title: User Registration Flow
+author: Guy Schamp
+---
+
+@theme clean
+@direction TB
+
+#start User Visits Signup Page
+
+  Enter Email & Password
+  #decision Email Already Exists?
+    -> yes: Show Error Message
+    -> no: Create Account
+
+  Show Error Message -> Enter Email & Password: "try again"
+
+  Create Account
+    Send Verification Email
+    #delay Wait for Verification
+
+  #decision Email Verified?
+    -> yes: Activate Account
+    -> no: #delay Wait for Verification: "resend"
+
+  Activate Account
+    Send Welcome Email
+    #end Registration Complete
