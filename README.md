@@ -240,6 +240,145 @@ The virtual SVG tree (`{ tag, attrs, children }`) is designed to support both st
 
 ---
 
+## SVG Output Conventions
+
+Every rendered SVG follows a consistent structure with CSS classes and data attributes designed for post-render manipulation — highlighting active steps, theming, or building interactive overlays.
+
+### Document Structure
+
+```xml
+<svg class="fs-diagram" viewBox="0 0 W H" width="W" height="H">
+  <defs>...</defs>          <!-- Arrow markers, drop shadow filter -->
+  <g class="fs-edges">      <!-- All connections -->
+    <g class="fs-edge">...</g>
+  </g>
+  <g class="fs-nodes">      <!-- All shapes -->
+    <g class="fs-node">...</g>
+  </g>
+</svg>
+```
+
+Nodes render above edges (painters order). Groups render as background containers behind both.
+
+### Node Attributes
+
+Every node is a `<g>` element with:
+
+| Attribute | Example | Description |
+|---|---|---|
+| `class` | `fs-node` | Always present on every node group |
+| `data-node-id` | `n1`, `n2`, `n3` | Stable identifier, assigned in parse order |
+| `data-shape` | `start`, `decision`, `process` | The shape type keyword |
+
+Inside each node group:
+- A shape element (`<rect>`, `<polygon>`, `<ellipse>`, etc.) with fill/stroke
+- A `<text class="fs-label">` element containing the node label
+
+```xml
+<g class="fs-node" data-node-id="n3" data-shape="decision">
+  <g filter="url(#fs-shadow)">
+    <polygon points="..." fill="#fff8e1" stroke="#f9a825"/>
+  </g>
+  <text class="fs-label">Approved?</text>
+</g>
+```
+
+### Edge Attributes
+
+Every edge is a `<g>` element with:
+
+| Attribute | Example | Description |
+|---|---|---|
+| `class` | `fs-edge` | Always present on every edge group |
+| `data-from` | `n1` | Source node ID |
+| `data-to` | `n3` | Target node ID |
+
+Inside each edge group:
+- A `<path class="fs-edge-path">` with the routed connection
+- An optional `<text class="fs-edge-label">` for labeled edges (e.g., "yes", "no", "try again")
+
+```xml
+<g class="fs-edge" data-from="n3" data-to="n4">
+  <path class="fs-edge-path" d="M130,388 L130,468" .../>
+  <text class="fs-edge-label">yes</text>
+</g>
+```
+
+### Step-Through / State-Based Styling
+
+The class and data-attribute conventions make it straightforward to implement step-through visualization — highlighting the current step, dimming visited steps, and fading upcoming ones. No AST traversal required; just target SVG elements by selector.
+
+**Node states for SOP / runbook step-through:**
+
+| State | Meaning | Suggested Style |
+|---|---|---|
+| Active | Current step | Teal border, filled background, checkmark icon |
+| Visited | Completed steps | Muted teal tint, reduced opacity (0.7) |
+| Upcoming | Next reachable steps | Dashed border, slightly faded |
+| Out of scope | Unreachable from current path | Heavily faded (opacity 0.3) |
+
+**Example CSS overlay:**
+
+```css
+/* Dim everything by default */
+.fs-node { opacity: 0.3; transition: opacity 0.3s; }
+.fs-edge { opacity: 0.3; transition: opacity 0.3s; }
+
+/* Visited steps — muted but visible */
+.fs-node.visited { opacity: 0.7; }
+.fs-node.visited rect,
+.fs-node.visited polygon { stroke: #4f98a3; fill: #e8f5f7; }
+
+/* Active step — full emphasis */
+.fs-node.active { opacity: 1; }
+.fs-node.active rect,
+.fs-node.active polygon { stroke: #01696f; stroke-width: 2.5; fill: #d4f0f2; }
+
+/* Upcoming steps — dashed, slightly visible */
+.fs-node.upcoming { opacity: 0.6; }
+.fs-node.upcoming rect,
+.fs-node.upcoming polygon { stroke-dasharray: 6 3; }
+
+/* Edges along the active path */
+.fs-edge.visited { opacity: 0.7; }
+.fs-edge.active { opacity: 1; }
+.fs-edge.active .fs-edge-path { stroke: #01696f; stroke-width: 2; }
+```
+
+**JavaScript targeting:**
+
+```javascript
+// Select a node by ID
+const node = svg.querySelector('[data-node-id="n5"]');
+node.classList.add('active');
+
+// Select all edges leaving a node
+const outgoing = svg.querySelectorAll('[data-from="n5"]');
+
+// Select all edges arriving at a node
+const incoming = svg.querySelectorAll('[data-to="n5"]');
+
+// Select by shape type
+const decisions = svg.querySelectorAll('[data-shape="decision"]');
+```
+
+### Node ID Mapping
+
+Node IDs (`n1`, `n2`, ...) are assigned sequentially in parse order. To build a lookup from label to ID, use the AST or walk the SVG:
+
+```javascript
+// Build label → ID map from the rendered SVG
+const labelMap = {};
+svg.querySelectorAll('.fs-node').forEach(g => {
+  const id = g.getAttribute('data-node-id');
+  const label = g.querySelector('.fs-label')?.textContent;
+  if (id && label) labelMap[label] = id;
+});
+// labelMap = { "Submit Request": "n1", "Validate": "n2", ... }
+```
+
+---
+
 ## Roadmap
 
 - [ ] Swimlanes (`lane` keyword for actor/persona attribution)
