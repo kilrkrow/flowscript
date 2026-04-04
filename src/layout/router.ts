@@ -31,6 +31,43 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
   const style = getRouting(doc);
   const cornerRadius = parseInt(getDirective(doc, 'corner-radius', '8'), 10);
   const routes = new Map<string, RouteResult>();
+  const hasLanes = doc.lanes.length > 0;
+
+  // Pre-compute port spread offsets: count how many edges share the same
+  // (node, cardinal direction) so we can spread them along the edge.
+  const portUsage = new Map<string, number>(); // "nodeId:N" -> count
+  const portIndex = new Map<string, number>(); // per-edge assigned index
+
+  if (hasLanes) {
+    // First pass: count
+    for (const edge of doc.edges) {
+      const fromNode = doc.nodes.get(edge.from);
+      const toNode = doc.nodes.get(edge.to);
+      if (!fromNode || !toNode) continue;
+      const { exitDir, entryDir } = chooseCardinalDirs(fromNode, toNode, edge);
+      const exitKey = `${edge.from}:${exitDir}:exit`;
+      const entryKey = `${edge.to}:${entryDir}:entry`;
+      portUsage.set(exitKey, (portUsage.get(exitKey) ?? 0) + 1);
+      portUsage.set(entryKey, (portUsage.get(entryKey) ?? 0) + 1);
+    }
+    // Second pass: assign indices
+    const portCursor = new Map<string, number>();
+    for (const edge of doc.edges) {
+      const fromNode = doc.nodes.get(edge.from);
+      const toNode = doc.nodes.get(edge.to);
+      if (!fromNode || !toNode) continue;
+      const { exitDir, entryDir } = chooseCardinalDirs(fromNode, toNode, edge);
+      const exitKey = `${edge.from}:${exitDir}:exit`;
+      const entryKey = `${edge.to}:${entryDir}:entry`;
+      const edgeKey = `${edge.from}->${edge.to}`;
+      const ei = portCursor.get(exitKey) ?? 0;
+      const ni = portCursor.get(entryKey) ?? 0;
+      portIndex.set(`exit:${edgeKey}`, ei);
+      portIndex.set(`entry:${edgeKey}`, ni);
+      portCursor.set(exitKey, ei + 1);
+      portCursor.set(entryKey, ni + 1);
+    }
+  }
 
   for (const edge of doc.edges) {
     const fromNode = doc.nodes.get(edge.from);
@@ -38,7 +75,16 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
     if (!fromNode || !toNode) continue;
 
     const key = `${edge.from}->${edge.to}`;
-    const result = routeEdge(edge, fromNode, toNode, style, cornerRadius);
+    let result: RouteResult;
+
+    if (hasLanes) {
+      result = routeCardinal(
+        edge, fromNode, toNode, cornerRadius,
+        portUsage, portIndex,
+      );
+    } else {
+      result = routeEdge(edge, fromNode, toNode, style, cornerRadius);
+    }
     routes.set(key, result);
   }
 
@@ -129,6 +175,166 @@ function choosePorts(from: FlowNode, to: FlowNode, edge: FlowEdge): { exit: Port
     if (dx > 0) return { exit: fromPorts.right, entry: toPorts.left };
     return { exit: fromPorts.left, entry: toPorts.right };
   }
+}
+
+// --- Cardinal Port Routing (for swimlanes) ---
+
+type CardinalDir = 'N' | 'S' | 'E' | 'W';
+
+/**
+ * Choose cardinal exit/entry directions based on relative node positions.
+ * Same-lane: vertical (N/S). Cross-lane: horizontal (E/W) + vertical approach.
+ */
+function chooseCardinalDirs(
+  from: FlowNode, to: FlowNode, edge: FlowEdge,
+): { exitDir: CardinalDir; entryDir: CardinalDir } {
+  const dx = (to.x ?? 0) - (from.x ?? 0);
+  const dy = (to.y ?? 0) - (from.y ?? 0);
+  const sameLane = from.lane && from.lane === to.lane;
+
+  if (sameLane || Math.abs(dx) < 10) {
+    // Same lane or vertically aligned: use vertical ports
+    if (from.shape === 'decision') {
+      if (edge.condition === 'no' || edge.condition === 'false') {
+        return { exitDir: dx >= 0 ? 'E' : 'W', entryDir: dy >= 0 ? 'N' : 'S' };
+      }
+    }
+    return dy >= 0
+      ? { exitDir: 'S', entryDir: 'N' }
+      : { exitDir: 'N', entryDir: 'S' };
+  }
+
+  // Cross-lane: exit sideways, enter from top (or side if same rank)
+  if (from.shape === 'decision') {
+    if (edge.condition === 'yes' || edge.condition === 'true') {
+      return { exitDir: 'S', entryDir: 'N' };
+    }
+  }
+
+  const exitDir: CardinalDir = dx > 0 ? 'E' : 'W';
+  // If target is significantly below/above, enter from top/bottom
+  // If roughly same rank, enter from the side
+  if (Math.abs(dy) > 30) {
+    return { exitDir, entryDir: dy > 0 ? 'N' : 'S' };
+  }
+  return { exitDir, entryDir: dx > 0 ? 'W' : 'E' };
+}
+
+/**
+ * Get a port position with spread offset for the given cardinal direction.
+ * When multiple edges share the same side, they get evenly distributed.
+ */
+function getSpreadPort(
+  node: FlowNode, dir: CardinalDir, index: number, total: number,
+): Port {
+  const cx = node.x ?? 0;
+  const cy = node.y ?? 0;
+  const hw = (node.width ?? 180) / 2;
+  const hh = (node.height ?? 44) / 2;
+
+  // Spread range: use 60% of the edge length, centered
+  const spreadH = (node.width ?? 180) * 0.6;
+  const spreadV = (node.height ?? 44) * 0.6;
+  const offsetH = total <= 1 ? 0 : (index / (total - 1) - 0.5) * spreadH;
+  const offsetV = total <= 1 ? 0 : (index / (total - 1) - 0.5) * spreadV;
+
+  if (node.shape === 'decision') {
+    switch (dir) {
+      case 'N': return { x: cx, y: cy - hh };
+      case 'S': return { x: cx, y: cy + hh };
+      case 'E': return { x: cx + hw * 0.9, y: cy };
+      case 'W': return { x: cx - hw * 0.9, y: cy };
+    }
+  }
+
+  switch (dir) {
+    case 'N': return { x: cx + offsetH, y: cy - hh };
+    case 'S': return { x: cx + offsetH, y: cy + hh };
+    case 'E': return { x: cx + hw, y: cy + offsetV };
+    case 'W': return { x: cx - hw, y: cy + offsetV };
+  }
+}
+
+/**
+ * Cardinal port router: used when swimlanes are active.
+ * Produces orthogonal paths with proper N/S/E/W port selection and spreading.
+ */
+function routeCardinal(
+  edge: FlowEdge,
+  from: FlowNode,
+  to: FlowNode,
+  cornerRadius: number,
+  portUsage: Map<string, number>,
+  portIndex: Map<string, number>,
+): RouteResult {
+  const { exitDir, entryDir } = chooseCardinalDirs(from, to, edge);
+  const edgeKey = `${edge.from}->${edge.to}`;
+
+  const exitTotal = portUsage.get(`${edge.from}:${exitDir}:exit`) ?? 1;
+  const exitIdx = portIndex.get(`exit:${edgeKey}`) ?? 0;
+  const entryTotal = portUsage.get(`${edge.to}:${entryDir}:entry`) ?? 1;
+  const entryIdx = portIndex.get(`entry:${edgeKey}`) ?? 0;
+
+  const exit = getSpreadPort(from, exitDir, exitIdx, exitTotal);
+  const entry = getSpreadPort(to, entryDir, entryIdx, entryTotal);
+
+  const r = cornerRadius;
+  const waypoints: Port[] = [exit];
+
+  const dx = entry.x - exit.x;
+  const dy = entry.y - exit.y;
+
+  // Build orthogonal waypoints based on exit/entry directions
+  if (exitDir === 'S' && entryDir === 'N') {
+    if (Math.abs(dx) < 2) {
+      // Straight down
+    } else {
+      const midY = exit.y + dy / 2;
+      waypoints.push({ x: exit.x, y: midY });
+      waypoints.push({ x: entry.x, y: midY });
+    }
+  } else if (exitDir === 'N' && entryDir === 'S') {
+    if (Math.abs(dx) < 2) {
+      // Straight up
+    } else {
+      const midY = exit.y + dy / 2;
+      waypoints.push({ x: exit.x, y: midY });
+      waypoints.push({ x: entry.x, y: midY });
+    }
+  } else if ((exitDir === 'E' || exitDir === 'W') && entryDir === 'N') {
+    // Horizontal then down into top
+    waypoints.push({ x: entry.x, y: exit.y });
+  } else if ((exitDir === 'E' || exitDir === 'W') && entryDir === 'S') {
+    // Horizontal then up into bottom
+    waypoints.push({ x: entry.x, y: exit.y });
+  } else if ((exitDir === 'E' || exitDir === 'W') && (entryDir === 'E' || entryDir === 'W')) {
+    // Horizontal to horizontal — need mid-X bend
+    const midX = exit.x + dx / 2;
+    waypoints.push({ x: midX, y: exit.y });
+    waypoints.push({ x: midX, y: entry.y });
+  } else if (exitDir === 'S' && (entryDir === 'E' || entryDir === 'W')) {
+    waypoints.push({ x: exit.x, y: entry.y });
+  } else if (exitDir === 'N' && (entryDir === 'E' || entryDir === 'W')) {
+    waypoints.push({ x: exit.x, y: entry.y });
+  } else {
+    // Fallback: midpoint
+    if (Math.abs(dx) > Math.abs(dy)) {
+      const midX = exit.x + dx / 2;
+      waypoints.push({ x: midX, y: exit.y });
+      waypoints.push({ x: midX, y: entry.y });
+    } else {
+      const midY = exit.y + dy / 2;
+      waypoints.push({ x: exit.x, y: midY });
+      waypoints.push({ x: entry.x, y: midY });
+    }
+  }
+
+  waypoints.push(entry);
+
+  const pathData = waypointsToRoundedPath(waypoints, r);
+  const labelPos = getPathMidpoint(waypoints);
+
+  return { pathData, labelPosition: labelPos };
 }
 
 // --- Orthogonal Router ---

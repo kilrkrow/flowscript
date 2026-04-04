@@ -182,6 +182,33 @@ Query Database -> Process Data
 Process Data -> Render Results: "response"
 ```
 
+### Swimlanes
+
+Use `#lane` to assign nodes to horizontally stacked swimlane columns. Nodes inside a lane are implicitly chained. Cross-lane connections must be explicit (`->`).
+
+```
+#lane Customer
+  #start Report Issue
+  Provide Details
+
+#lane Support
+  Triage Ticket
+  #decision Severity?
+    -> high: Escalate
+    -> low: Apply Fix
+
+#lane Engineering
+  Investigate Root Cause
+  Deploy Fix
+
+// Cross-lane edges
+Provide Details -> Triage Ticket
+Escalate -> Investigate Root Cause
+Deploy Fix -> #end Resolved
+```
+
+Each lane gets a colored background with a rotated header label on the left. Cardinal port routing automatically selects N/S/E/W anchor points and spreads multiple connections along node edges to avoid overlap.
+
 ### Comments
 
 ```
@@ -381,8 +408,8 @@ svg.querySelectorAll('.fs-node').forEach(g => {
 
 ## Roadmap
 
-- [ ] Swimlanes (`lane` keyword for actor/persona attribution)
-- [ ] Cardinal port routing (N/S/E/W anchor points with port spreading)
+- [x] Swimlanes (`#lane` keyword for actor/persona attribution with horizontal stacking)
+- [x] Cardinal port routing (N/S/E/W anchor points with port spreading)
 - [ ] `opentype.js` text measurement (replacing character-width heuristic)
 - [ ] Dark theme
 - [ ] PNG and PDF export

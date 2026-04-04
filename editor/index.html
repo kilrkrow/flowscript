@@ -213,6 +213,7 @@ html, body {
     <option value="registration" selected>User Registration</option>
     <option value="deploy">CI/CD Pipeline</option>
     <option value="support">Support Ticket</option>
+    <option value="swimlanes">Swimlanes</option>
     <option value="minimal">Minimal</option>
   </select>
   <div class="spacer"></div>
@@ -351,6 +352,41 @@ title: Support Ticket Flow
   Close Ticket
     Send Resolution Email
     #end Resolved`,
+
+  swimlanes: `---
+title: Incident Response Flow
+---
+
+@theme clean
+@direction TB
+
+#lane Customer
+  #start Report Issue
+  Provide Details
+  #end Resolved
+
+#lane Support Agent
+  Triage Ticket
+  #decision Severity?
+    -> high: Escalate to Engineering
+    -> low: Apply Known Fix
+
+#lane Engineering
+  Investigate Root Cause
+  Deploy Fix
+
+#lane System
+  Run Automated Tests
+  #decision Tests Pass?
+    -> yes: Close Ticket
+    -> no: Investigate Root Cause
+
+// Cross-lane edges (explicit)
+Provide Details -> Triage Ticket
+Apply Known Fix -> Close Ticket
+Escalate to Engineering -> Investigate Root Cause
+Deploy Fix -> Run Automated Tests
+Close Ticket -> Resolved`,
 
   minimal: `#start Hello
   World

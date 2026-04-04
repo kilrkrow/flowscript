@@ -15,7 +15,7 @@
 
 import { tokenize, type Token, type TokenType } from './lexer.js';
 import type {
-  FlowDocument, FlowNode, FlowEdge, FlowGroup,
+  FlowDocument, FlowNode, FlowEdge, FlowGroup, FlowLane,
   Directive, ShapeType, StyleOverrides,
 } from './ast.js';
 
@@ -40,6 +40,7 @@ class Parser {
   private tokens: Token[];
   private doc: FlowDocument;
   private currentGroup: string | null = null;
+  private currentLane: string | null = null;
   private implicitPrev: string | null = null;
   private nodeCounter = 0;
   private idMap = new Map<string, string>(); // @id -> generated node id
@@ -52,6 +53,7 @@ class Parser {
       nodes: new Map(),
       edges: [],
       groups: [],
+      lanes: [],
     };
   }
 
@@ -135,6 +137,8 @@ class Parser {
         this.parseDirective();
       } else if (token.type === 'SHAPE_KEYWORD' && token.value === 'group') {
         this.parseGroup();
+      } else if (token.type === 'SHAPE_KEYWORD' && token.value === 'lane') {
+        this.parseLane();
       } else if (token.type === 'SHAPE_KEYWORD') {
         this.parseShapedNode();
       } else if (token.type === 'AT_ID') {
@@ -230,6 +234,84 @@ class Parser {
       } else if (token.type === 'TEXT') {
         const nodeId = this.parseTextLine();
         if (nodeId) group.children.push(nodeId);
+      } else if (token.type === 'COMMENT' || token.type === 'NEWLINE') {
+        this.advance();
+      } else {
+        break;
+      }
+    }
+  }
+
+  // --- Lanes ---
+
+  private parseLane(): void {
+    this.advance(); // skip #lane keyword
+
+    // Lane label
+    let label = '';
+    if (this.peek().type === 'TEXT') {
+      label = this.advance().value;
+    } else if (this.peek().type === 'STRING') {
+      label = this.advance().value;
+    }
+
+    const laneId = `lane_${label.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    const style = this.tryParseStyle();
+
+    const lane: FlowLane = {
+      id: laneId,
+      label,
+      children: [],
+      style: style || undefined,
+    };
+
+    this.doc.lanes.push(lane);
+
+    // Parse indented children on subsequent lines
+    this.match('NEWLINE');
+    const prevLane = this.currentLane;
+    const prevImplicit = this.implicitPrev;
+    this.currentLane = laneId;
+    // Implicit chain is NOT reset — cross-lane edges are explicit only,
+    // but within a lane we allow implicit chaining from wherever the caller left off.
+    // Actually, per our design: implicit within lane, explicit across lanes.
+    this.implicitPrev = null;
+
+    this.parseLaneBlock(lane);
+
+    this.currentLane = prevLane;
+    this.implicitPrev = prevImplicit;
+  }
+
+  /**
+   * Parse indented lines as children of a lane.
+   * Identical structure to parseIndentedBlock but adds nodes to a FlowLane.
+   */
+  private parseLaneBlock(lane: FlowLane): void {
+    while (!this.isAtEnd()) {
+      if (this.peek().type === 'NEWLINE') {
+        this.advance();
+        continue;
+      }
+      if (this.peek().type === 'COMMENT') {
+        this.advance();
+        continue;
+      }
+
+      if (this.peek().type !== 'INDENT') break;
+      this.advance(); // consume INDENT
+
+      const token = this.peek();
+
+      if (token.type === 'SHAPE_KEYWORD') {
+        const nodeId = this.parseShapedNode();
+        if (nodeId) lane.children.push(nodeId);
+      } else if (token.type === 'AT_ID') {
+        const nodeId = this.parseAtIdLine();
+        if (nodeId) lane.children.push(nodeId);
+      } else if (token.type === 'TEXT') {
+        const nodeId = this.parseTextLine();
+        if (nodeId) lane.children.push(nodeId);
       } else if (token.type === 'COMMENT' || token.type === 'NEWLINE') {
         this.advance();
       } else {
@@ -588,6 +670,7 @@ class Parser {
       label,
       shape,
       group: this.currentGroup ?? undefined,
+      lane: this.currentLane ?? undefined,
     };
     this.doc.nodes.set(id, node);
     return id;

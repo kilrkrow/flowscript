@@ -32,7 +32,7 @@ export interface Token {
 
 const SHAPE_KEYWORDS = new Set([
   'start', 'end', 'decision', 'process', 'subprocess',
-  'io', 'data', 'circle', 'note', 'group', 'manual', 'delay',
+  'io', 'data', 'circle', 'note', 'group', 'lane', 'manual', 'delay',
 ]);
 
 const DIRECTIVE_KEYS = new Set([

@@ -7,7 +7,7 @@
 
 import * as dagre from '@dagrejs/dagre';
 const { Graph } = dagre;
-import type { FlowDocument, FlowNode, Direction } from '../parser/ast.js';
+import type { FlowDocument, FlowNode, FlowLane, Direction } from '../parser/ast.js';
 import { getDirection, getDirective } from '../parser/ast.js';
 
 /** Default node dimensions by shape type */
@@ -121,5 +121,112 @@ export function layoutDocument(doc: FlowDocument): void {
         y: Math.round(p.y),
       }));
     }
+  }
+
+  // If we have lanes, reposition nodes into swimlane columns
+  if (doc.lanes.length > 0) {
+    applySwimlaneLayout(doc, spacing);
+  }
+}
+
+// ── Swimlane post-layout ──────────────────────────────────────────────
+
+/**
+ * After dagre assigns y positions (ranks), reposition nodes into
+ * horizontally stacked lane columns. The y position from dagre is
+ * preserved so that cross-lane edges line up vertically.
+ *
+ * Layout strategy:
+ * 1. Use dagre's y positions as the row (rank) assignment.
+ * 2. Assign each lane a column of fixed width.
+ * 3. Center each node horizontally within its lane column.
+ * 4. Nodes without a lane get placed in an "unassigned" overflow column.
+ */
+function applySwimlaneLayout(doc: FlowDocument, spacing: number): void {
+  const LANE_PAD = 40;        // Internal horizontal padding per lane
+  const LANE_GAP = 8;         // Gap between lane columns
+  const HEADER_WIDTH = 120;   // Lane header left strip
+
+  // 1. Determine the max width needed per lane
+  const laneNodeWidths = new Map<string, number>();
+  for (const lane of doc.lanes) {
+    let maxW = 180;
+    for (const nid of lane.children) {
+      const node = doc.nodes.get(nid);
+      if (node) maxW = Math.max(maxW, node.width ?? 180);
+    }
+    laneNodeWidths.set(lane.id, maxW);
+  }
+
+  // 2. Compute lane column X positions (left-to-right)
+  const laneX = new Map<string, { left: number; center: number; width: number }>();
+  let xCursor = HEADER_WIDTH;
+  for (const lane of doc.lanes) {
+    const nodeW = laneNodeWidths.get(lane.id) ?? 180;
+    const colWidth = nodeW + LANE_PAD * 2;
+    laneX.set(lane.id, {
+      left: xCursor,
+      center: xCursor + colWidth / 2,
+      width: colWidth,
+    });
+    xCursor += colWidth + LANE_GAP;
+  }
+
+  // 3. Collect all unique y-ranks from dagre (these are the rows)
+  const yValues = new Set<number>();
+  for (const [_, node] of doc.nodes) {
+    if (node.y !== undefined) yValues.add(Math.round(node.y));
+  }
+
+  // 4. Reposition nodes into their lane columns
+  for (const [_, node] of doc.nodes) {
+    if (node.lane) {
+      const col = laneX.get(node.lane);
+      if (col) {
+        node.x = col.center;
+      }
+    }
+  }
+
+  // 5. Handle multiple nodes in the same lane at the same rank.
+  //    Stack them vertically with spacing if they collide.
+  const rankBuckets = new Map<string, FlowNode[]>();
+  for (const [_, node] of doc.nodes) {
+    if (!node.lane) continue;
+    const key = `${node.lane}::${Math.round(node.y ?? 0)}`;
+    if (!rankBuckets.has(key)) rankBuckets.set(key, []);
+    rankBuckets.get(key)!.push(node);
+  }
+  for (const [_, bucket] of rankBuckets) {
+    if (bucket.length <= 1) continue;
+    const totalH = bucket.reduce((sum, n) => sum + (n.height ?? 44), 0) + (bucket.length - 1) * 20;
+    let yOff = (bucket[0].y ?? 0) - totalH / 2 + (bucket[0].height ?? 44) / 2;
+    for (const n of bucket) {
+      n.y = yOff + (n.height ?? 44) / 2;
+      yOff += (n.height ?? 44) + 20;
+    }
+  }
+
+  // 6. Compute overall y bounds (top/bottom extent of all nodes)
+  let minY = Infinity, maxY = -Infinity;
+  for (const [_, node] of doc.nodes) {
+    if (node.y === undefined) continue;
+    const hh = (node.height ?? 44) / 2;
+    minY = Math.min(minY, node.y - hh);
+    maxY = Math.max(maxY, node.y + hh);
+  }
+  if (minY === Infinity) { minY = 0; maxY = 400; }
+
+  const topPad = 40;
+  const bottomPad = 40;
+
+  // 7. Write lane geometry back to AST
+  for (const lane of doc.lanes) {
+    const col = laneX.get(lane.id);
+    if (!col) continue;
+    lane.width = col.width;
+    lane.height = (maxY - minY) + topPad + bottomPad;
+    lane.x = col.left + col.width / 2;
+    lane.y = minY - topPad + lane.height / 2;
   }
 }

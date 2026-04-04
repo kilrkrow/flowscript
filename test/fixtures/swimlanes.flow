@@ -1,30 +1,35 @@
 ---
-title: API Request Flow
+title: Incident Response Flow
+author: Guy Schamp
 ---
 
 @theme clean
 @direction TB
 
-#group Frontend
-  Show Loading
-  Render Results
-  Display Error
+#lane Customer
+  #start Report Issue
+  Provide Details
+  #end Resolved
 
-#group API Gateway
-  Validate Token
-  Rate Limit Check
-  Route Request
+#lane Support Agent
+  Triage Ticket
+  #decision Severity?
+    -> high: Escalate to Engineering
+    -> low: Apply Known Fix
 
-#group Backend
-  Query Database
-  Process Data
-  Return Response
+#lane Engineering
+  Investigate Root Cause
+  Deploy Fix
 
-Show Loading -> Validate Token: "API call"
-Validate Token -> Rate Limit Check
-Rate Limit Check -> Route Request
-Route Request -> Query Database
-Query Database -> Process Data
-Process Data -> Return Response
-Return Response -> Render Results: "200 OK"
-Rate Limit Check -> Display Error: "429"
+#lane System
+  Run Automated Tests
+  #decision Tests Pass?
+    -> yes: Close Ticket
+    -> no: Investigate Root Cause
+
+// Cross-lane edges (explicit)
+Provide Details -> Triage Ticket
+Apply Known Fix -> Close Ticket
+Escalate to Engineering -> Investigate Root Cause
+Deploy Fix -> Run Automated Tests
+Close Ticket -> Resolved

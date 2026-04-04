@@ -35,6 +35,7 @@ export interface FlowNode {
   shape: ShapeType;
   style?: StyleOverrides;
   group?: string;
+  lane?: string; // lane ID this node belongs to
   /** Set by layout engine */
   x?: number;
   y?: number;
@@ -64,6 +65,18 @@ export interface FlowGroup {
   height?: number;
 }
 
+export interface FlowLane {
+  id: string;
+  label: string;
+  children: string[]; // node IDs
+  style?: StyleOverrides;
+  /** Set by layout engine */
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+}
+
 export interface Directive {
   key: string;
   value: string;
@@ -75,6 +88,7 @@ export interface FlowDocument {
   nodes: Map<string, FlowNode>;
   edges: FlowEdge[];
   groups: FlowGroup[];
+  lanes: FlowLane[];
 }
 
 /**

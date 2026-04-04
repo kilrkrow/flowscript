@@ -27,6 +27,15 @@ export interface Theme {
     headerFills: string[];
     labelFont: { family: string; size: number; color: string; weight: number };
   };
+  lane: {
+    fills: string[];
+    strokes: string[];
+    headerFills: string[];
+    headerWidth: number;
+    dividerStroke: string;
+    dividerDash: string;
+    labelFont: { family: string; size: number; color: string; weight: number };
+  };
 }
 
 export const cleanTheme: Theme = {
@@ -64,5 +73,14 @@ export const cleanTheme: Theme = {
     strokes:     ['#93c5fd', '#86efac', '#c4b5fd', '#fcd34d'],
     headerFills: ['#dbeafe', '#dcfce7', '#ede9fe', '#fef08a'],
     labelFont: { family: "'Inter', system-ui, sans-serif", size: 12, color: '#1e40af', weight: 700 },
+  },
+  lane: {
+    fills:       ['#f8fafc', '#fefce8', '#f0fdf4', '#faf5ff', '#fff1f2'],
+    strokes:     ['#cbd5e1', '#fde047', '#86efac', '#c4b5fd', '#fda4af'],
+    headerFills: ['#e2e8f0', '#fef08a', '#bbf7d0', '#ddd6fe', '#fecdd3'],
+    headerWidth: 120,
+    dividerStroke: '#cbd5e1',
+    dividerDash: '4,3',
+    labelFont: { family: "'Inter', system-ui, sans-serif", size: 12, color: '#334155', weight: 700 },
   },
 };

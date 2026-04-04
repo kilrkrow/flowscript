@@ -13,7 +13,7 @@
  */
 
 export { parse } from './parser/parser.js';
-export type { FlowDocument, FlowNode, FlowEdge, FlowGroup, Directive, ShapeType } from './parser/ast.js';
+export type { FlowDocument, FlowNode, FlowEdge, FlowGroup, FlowLane, Directive, ShapeType } from './parser/ast.js';
 export { layoutDocument as layout } from './layout/dagre-layout.js';
 export { routeEdges as route } from './layout/router.js';
 export type { RouteResult } from './layout/router.js';

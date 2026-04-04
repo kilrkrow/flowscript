@@ -36,6 +36,7 @@ export function renderSVG(doc: FlowDocument, routes: Map<string, RouteResult>, o
     class: 'fs-diagram',
   },
     renderDefs(theme),
+    renderLanes(doc, theme),
     renderGroups(doc, theme),
     renderEdges(doc, routes, theme),
     renderNodes(doc, theme),
@@ -72,6 +73,94 @@ function renderDefs(theme: Theme): SvgElement {
       }),
     ),
   );
+}
+
+function renderLanes(doc: FlowDocument, theme: Theme): SvgElement {
+  if (doc.lanes.length === 0) return el('g', {});
+
+  const laneEls: (SvgElement | string)[] = [];
+  const headerWidth = theme.lane.headerWidth;
+  const font = theme.lane.labelFont;
+  const labelColors = ['#334155', '#854d0e', '#166534', '#5b21b6', '#9f1239'];
+
+  // Compute overall Y extent from lane geometry
+  let topY = Infinity, bottomY = -Infinity;
+  for (const lane of doc.lanes) {
+    if (lane.y === undefined || lane.height === undefined) continue;
+    const lTop = lane.y - lane.height / 2;
+    const lBot = lane.y + lane.height / 2;
+    if (lTop < topY) topY = lTop;
+    if (lBot > bottomY) bottomY = lBot;
+  }
+  if (topY === Infinity) return el('g', {});
+
+  const totalHeight = bottomY - topY;
+
+  for (let i = 0; i < doc.lanes.length; i++) {
+    const lane = doc.lanes[i];
+    if (lane.x === undefined || lane.y === undefined) continue;
+
+    const lw = lane.width ?? 260;
+    const lh = totalHeight; // all lanes same height
+    const lx = lane.x - lw / 2;
+    const ly = topY;
+
+    const colorIdx = i % theme.lane.fills.length;
+    const fill = lane.style?.fill ?? theme.lane.fills[colorIdx];
+    const stroke = lane.style?.stroke ?? theme.lane.strokes[colorIdx];
+    const headerFill = theme.lane.headerFills[colorIdx];
+    const labelColor = labelColors[colorIdx % labelColors.length];
+
+    // Lane background
+    laneEls.push(el('rect', {
+      x: lx - headerWidth, y: ly, width: lw + headerWidth, height: lh,
+      rx: 6, fill, stroke, 'stroke-width': 1,
+      class: 'fs-lane-bg',
+    }));
+
+    // Lane header (left strip)
+    laneEls.push(el('rect', {
+      x: lx - headerWidth, y: ly, width: headerWidth, height: lh,
+      rx: 6, fill: headerFill, stroke: 'none',
+      class: 'fs-lane-header',
+    }));
+    // Cover right corners of header
+    laneEls.push(el('rect', {
+      x: lx - headerWidth + headerWidth - 6, y: ly, width: 6, height: lh,
+      fill: headerFill, stroke: 'none',
+    }));
+
+    // Lane label — rotated 90° in the header strip
+    const labelCx = lx - headerWidth / 2;
+    const labelCy = ly + lh / 2;
+    laneEls.push(el('text', {
+      x: labelCx, y: labelCy,
+      'text-anchor': 'middle',
+      'dominant-baseline': 'central',
+      'font-family': font.family,
+      'font-size': font.size,
+      'font-weight': font.weight,
+      'letter-spacing': '1',
+      fill: labelColor,
+      transform: `rotate(-90, ${labelCx}, ${labelCy})`,
+      class: 'fs-lane-label',
+    }, lane.label));
+
+    // Divider line (right edge of this lane) — skip for last lane
+    if (i < doc.lanes.length - 1) {
+      const divX = lx + lw + 4; // midpoint of LANE_GAP (8px gap / 2)
+      laneEls.push(el('line', {
+        x1: divX, y1: ly + 4,
+        x2: divX, y2: ly + lh - 4,
+        stroke: theme.lane.dividerStroke,
+        'stroke-width': 1,
+        'stroke-dasharray': theme.lane.dividerDash,
+        class: 'fs-lane-divider',
+      }));
+    }
+  }
+
+  return el('g', { class: 'fs-lanes', 'data-lane-count': doc.lanes.length }, ...laneEls);
 }
 
 function renderGroups(doc: FlowDocument, theme: Theme): SvgElement {
@@ -221,6 +310,18 @@ function calculateBounds(doc: FlowDocument, padding: number) {
     minY = Math.min(minY, group.y - gh);
     maxX = Math.max(maxX, group.x + gw);
     maxY = Math.max(maxY, group.y + gh);
+  }
+
+  // Include lanes in bounds (they extend to the left with the header)
+  for (const lane of doc.lanes) {
+    if (lane.x === undefined || lane.y === undefined) continue;
+    const lw = (lane.width ?? 260) / 2;
+    const lh = (lane.height ?? 400) / 2;
+    const headerW = 120; // matches theme.lane.headerWidth
+    minX = Math.min(minX, lane.x - lw - headerW);
+    minY = Math.min(minY, lane.y - lh);
+    maxX = Math.max(maxX, lane.x + lw);
+    maxY = Math.max(maxY, lane.y + lh);
   }
 
   if (minX === Infinity) {
