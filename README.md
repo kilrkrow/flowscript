@@ -8,7 +8,7 @@ A diagram-as-code DSL that renders clean, Visio-quality flowcharts from human-re
   #decision Email Already Exists?
     -> yes: Show Error Message
     -> no: Create Account
-  Show Error Message -> Enter Email & Password: "try again"
+  Show Error Message ~> Enter Email & Password: "try again"
   Create Account
     Send Verification Email
     #end Registration Complete
@@ -166,6 +166,26 @@ Step One -> Step Two: "label on edge"
   -> no: #end Done
 ```
 
+**Retry / dashed edges** — use `~>` instead of `->` to render the
+connection with a dashed stroke. This is the explicit way to mark a
+loop-back, retry, or "soft" edge:
+
+```
+#start Submit
+  Validate
+  #decision OK?
+    -> yes: #end Done
+    ~> no: Validate
+```
+
+`~>` works anywhere `->` does — inline, in decision branches, with
+labels and conditions. Edges from `~>` are tagged in the SVG with
+`class="fs-edge-path fs-edge-retry"` so you can style them further.
+
+For backward compatibility, edges whose label is exactly `"try again"`
+or `"resend"` are also rendered dashed even when written with `->`.
+Prefer `~>` in new diagrams — it doesn't depend on a particular label.
+
 ### Groups
 
 ```
@@ -322,6 +342,9 @@ Every edge is a `<g>` element with:
 
 Inside each edge group:
 - A `<path class="fs-edge-path">` with the routed connection
+  - Retry / dashed edges (written with `~>`, or with the legacy magic
+    labels `try again` / `resend`) carry the additional class
+    `fs-edge-retry` and a `stroke-dasharray`.
 - An optional `<text class="fs-edge-label">` for labeled edges (e.g., "yes", "no", "try again")
 
 ```xml
@@ -410,6 +433,9 @@ svg.querySelectorAll('.fs-node').forEach(g => {
 
 - [x] Swimlanes (`#lane` keyword for actor/persona attribution with horizontal stacking)
 - [x] Cardinal port routing (N/S/E/W anchor points with port spreading)
+- [x] Centralized shape port abstraction with circle / decision support
+- [x] Explicit retry / dashed edge syntax (`~>`)
+- [ ] `#io` parallelogram custom ports (currently falls back to rect)
 - [ ] `opentype.js` text measurement (replacing character-width heuristic)
 - [ ] Dark theme
 - [ ] PNG and PDF export

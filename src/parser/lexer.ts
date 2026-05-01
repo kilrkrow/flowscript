@@ -11,6 +11,7 @@ export type TokenType =
   | 'DIRECTIVE'           // @theme, @direction, etc.
   | 'SHAPE_KEYWORD'       // #start, #end, #decision, etc.
   | 'ARROW'               // ->
+  | 'RETRY_ARROW'         // ~> (dashed retry/loop-back edge)
   | 'COLON'               // :
   | 'COMMA'               // ,
   | 'LBRACE'              // {
@@ -181,6 +182,13 @@ function tokenizeLine(line: string, lineNum: number, baseCol: number, tokens: To
       continue;
     }
 
+    // Retry arrow: ~> (dashed loop-back / retry edge)
+    if (peek() === '~' && line[pos + 1] === '>') {
+      tokens.push({ type: 'RETRY_ARROW', value: '~>', line: lineNum, col: c });
+      pos += 2;
+      continue;
+    }
+
     // Colon
     if (peek() === ':') {
       tokens.push({ type: 'COLON', value: ':', line: lineNum, col: c });
@@ -244,6 +252,7 @@ function readTextSegment(line: string, startPos: number, _lineNum: number): { va
     // Stop at special characters
     if (line[pos] === ':' || line[pos] === ',' || line[pos] === '{' || line[pos] === '}' || line[pos] === '"') break;
     if (line[pos] === '-' && line[pos + 1] === '>') break;
+    if (line[pos] === '~' && line[pos + 1] === '>') break;
     if (line[pos] === '@' && pos > startPos) break;
     if (line[pos] === '#' && pos > startPos) break;
     // Inline comment

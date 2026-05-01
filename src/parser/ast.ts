@@ -49,6 +49,12 @@ export interface FlowEdge {
   label?: string;
   condition?: string; // 'yes' | 'no' | custom
   style?: StyleOverrides;
+  /**
+   * True when the edge represents a retry / loop-back and should render
+   * with a dashed stroke. Set explicitly via `~>` syntax, or implicitly
+   * for backward-compatible magic labels (`try again`, `resend`).
+   */
+  retry?: boolean;
   /** Set by edge router — waypoints for the path */
   points?: Array<{ x: number; y: number }>;
 }

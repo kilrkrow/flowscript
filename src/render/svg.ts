@@ -229,7 +229,10 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
     const route = routes.get(key);
     if (!route) return el('g', {});
 
-    const isDashed = edge.label === 'try again' || edge.label === 'resend';
+    // Dashed for explicit retry edges (`~>`) or legacy magic labels
+    // (`try again`, `resend`). The `retry` flag is set in the parser.
+    const isDashed = edge.retry === true
+      || edge.label === 'try again' || edge.label === 'resend';
     const edgeGroup: (SvgElement | string)[] = [];
 
     // Path
@@ -239,7 +242,7 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
       stroke: edge.style?.stroke ?? theme.edge.stroke,
       'stroke-width': theme.edge.strokeWidth,
       'marker-end': 'url(#fs-arrow)',
-      class: 'fs-edge-path',
+      class: isDashed ? 'fs-edge-path fs-edge-retry' : 'fs-edge-path',
       ...(isDashed ? { 'stroke-dasharray': '6,3' } : {}),
     }));
 

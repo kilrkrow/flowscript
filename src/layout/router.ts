@@ -12,6 +12,7 @@
 
 import type { FlowDocument, FlowNode, FlowEdge, RoutingStyle } from '../parser/ast.js';
 import { getRouting, getDirective } from '../parser/ast.js';
+import { getPortForNodeShape, type CardinalDir as ShapeDir } from './shape-ports.js';
 
 export interface RouteResult {
   /** SVG path data string (M, L, Q, C commands) */
@@ -117,26 +118,11 @@ function getNodeCenter(node: FlowNode): Port {
 }
 
 function getNodePorts(node: FlowNode): { top: Port; bottom: Port; left: Port; right: Port } {
-  const cx = node.x ?? 0;
-  const cy = node.y ?? 0;
-  const hw = (node.width ?? 180) / 2;
-  const hh = (node.height ?? 44) / 2;
-
-  if (node.shape === 'decision') {
-    // Diamond — ports at the tips
-    return {
-      top:    { x: cx, y: cy - hh },
-      bottom: { x: cx, y: cy + hh },
-      left:   { x: cx - hw * 0.9, y: cy },
-      right:  { x: cx + hw * 0.9, y: cy },
-    };
-  }
-
   return {
-    top:    { x: cx, y: cy - hh },
-    bottom: { x: cx, y: cy + hh },
-    left:   { x: cx - hw, y: cy },
-    right:  { x: cx + hw, y: cy },
+    top:    getPortForNodeShape(node, 'N'),
+    bottom: getPortForNodeShape(node, 'S'),
+    left:   getPortForNodeShape(node, 'W'),
+    right:  getPortForNodeShape(node, 'E'),
   };
 }
 
@@ -227,32 +213,17 @@ function chooseCardinalDirs(
 function getSpreadPort(
   node: FlowNode, dir: CardinalDir, index: number, total: number,
 ): Port {
-  const cx = node.x ?? 0;
-  const cy = node.y ?? 0;
-  const hw = (node.width ?? 180) / 2;
-  const hh = (node.height ?? 44) / 2;
-
   // Spread range: use 60% of the edge length, centered
   const spreadH = (node.width ?? 180) * 0.6;
   const spreadV = (node.height ?? 44) * 0.6;
   const offsetH = total <= 1 ? 0 : (index / (total - 1) - 0.5) * spreadH;
   const offsetV = total <= 1 ? 0 : (index / (total - 1) - 0.5) * spreadV;
 
-  if (node.shape === 'decision') {
-    switch (dir) {
-      case 'N': return { x: cx, y: cy - hh };
-      case 'S': return { x: cx, y: cy + hh };
-      case 'E': return { x: cx + hw * 0.9, y: cy };
-      case 'W': return { x: cx - hw * 0.9, y: cy };
-    }
-  }
-
-  switch (dir) {
-    case 'N': return { x: cx + offsetH, y: cy - hh };
-    case 'S': return { x: cx + offsetH, y: cy + hh };
-    case 'E': return { x: cx + hw, y: cy + offsetV };
-    case 'W': return { x: cx - hw, y: cy + offsetV };
-  }
+  // Decisions (diamonds) keep edges at the tip — the shape port function
+  // ignores the offset for decisions to preserve the existing visual.
+  const offset =
+    dir === 'N' || dir === 'S' ? offsetH : offsetV;
+  return getPortForNodeShape(node, dir as ShapeDir, offset);
 }
 
 /**
