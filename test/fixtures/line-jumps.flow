@@ -1,0 +1,17 @@
+---
+title: Line-jump demo — orthogonal crossings render with arc bumps
+---
+
+@theme clean
+@direction TB
+
+#start A
+  B
+  #decision Check?
+    -> yes: C
+    -> no: B
+  C
+  #end Done
+
+// Cross-cutting retry edge that yields to the main flow
+C ~> A: "restart"

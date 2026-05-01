@@ -19,6 +19,17 @@ export interface RouteResult {
   pathData: string;
   /** Where to place the edge label (midpoint of the path) */
   labelPosition: { x: number; y: number };
+  /**
+   * Orthogonal waypoints (preserved when the route is orthogonal).
+   * Used by the line-jump post-pass to detect segment crossings.
+   * Bezier and polyline routes do not set this.
+   */
+  waypoints?: Array<{ x: number; y: number }>;
+  /**
+   * Whether this edge prefers to *yield* (be the one with arc bumps)
+   * when crossings happen. Retry/dashed edges yield to normal edges.
+   */
+  yieldOnCross?: boolean;
 }
 
 export interface RouterStrategy {
@@ -89,6 +100,13 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
     routes.set(key, result);
   }
 
+  // Post-pass: insert Visio-style line jumps where orthogonal segments
+  // cross. Only applies when line-jumps are enabled (default on).
+  const enableJumps = getDirective(doc, 'line-jumps', 'on').toLowerCase() !== 'off';
+  if (enableJumps) {
+    applyLineJumps(doc, routes, cornerRadius);
+  }
+
   return routes;
 }
 
@@ -128,39 +146,195 @@ function getNodePorts(node: FlowNode): { top: Port; bottom: Port; left: Port; ri
 
 /**
  * Choose the best exit/entry ports based on relative node positions.
+ *
+ * Uses a scoring pass over candidate (exitDir, entryDir) pairs that rewards:
+ *   - dirs aligned with the relative offset between centers
+ *   - decision targets entered from the top when the source is above
+ *   - exit/entry sides on opposite halves (avoids "doubling back")
+ *   - fewer bends (straight or single-jog routes)
+ * and penalizes:
+ *   - paths that cut back across the source/target box
+ *   - edges that exit toward the wrong side relative to the target
  */
 function choosePorts(from: FlowNode, to: FlowNode, edge: FlowEdge): { exit: Port; entry: Port } {
+  const { exitDir, entryDir } = chooseScoredDirs(from, to, edge);
   const fromPorts = getNodePorts(from);
   const toPorts = getNodePorts(to);
+  return {
+    exit: portForDir(fromPorts, exitDir),
+    entry: portForDir(toPorts, entryDir),
+  };
+}
 
+function portForDir(
+  ports: { top: Port; bottom: Port; left: Port; right: Port },
+  dir: CardinalDir,
+): Port {
+  switch (dir) {
+    case 'N': return ports.top;
+    case 'S': return ports.bottom;
+    case 'E': return ports.right;
+    case 'W': return ports.left;
+  }
+}
+
+/**
+ * Score-based selection of cardinal exit/entry directions for the
+ * non-swimlane orthogonal router. Considers relative geometry between
+ * the source and target, and prefers the natural top-entry into a
+ * decision when the source is above the diamond (the case in the
+ * "Clarify Goal → Enough Detail?" sketch).
+ */
+function chooseScoredDirs(
+  from: FlowNode, to: FlowNode, edge: FlowEdge,
+): { exitDir: CardinalDir; entryDir: CardinalDir } {
   const fc = getNodeCenter(from);
   const tc = getNodeCenter(to);
-
   const dx = tc.x - fc.x;
   const dy = tc.y - fc.y;
 
-  // Decision nodes: first condition exits bottom, second exits right
+  // Decision-source convention: keep the long-standing "yes/no" semantics
+  // so existing diagrams don't shift. Only the *generic* case is rescored.
   if (from.shape === 'decision') {
     if (edge.condition === 'yes' || edge.condition === 'true' ||
         (!edge.condition && Math.abs(dy) > Math.abs(dx))) {
-      return { exit: fromPorts.bottom, entry: toPorts.top };
+      return { exitDir: 'S', entryDir: pickDecisionEntry(to, dx, dy, 'S') };
     }
     if (edge.condition === 'no' || edge.condition === 'false') {
-      if (dx >= 0) return { exit: fromPorts.right, entry: toPorts.left };
-      return { exit: fromPorts.left, entry: toPorts.right };
+      const exitDir: CardinalDir = dx >= 0 ? 'E' : 'W';
+      return { exitDir, entryDir: pickDecisionEntry(to, dx, dy, exitDir) };
     }
   }
 
-  // General case: choose based on relative position
-  if (Math.abs(dy) > Math.abs(dx)) {
-    // Primarily vertical
-    if (dy > 0) return { exit: fromPorts.bottom, entry: toPorts.top };
-    return { exit: fromPorts.top, entry: toPorts.bottom };
-  } else {
-    // Primarily horizontal
-    if (dx > 0) return { exit: fromPorts.right, entry: toPorts.left };
-    return { exit: fromPorts.left, entry: toPorts.right };
+  const candidates: Array<{ exit: CardinalDir; entry: CardinalDir }> = [];
+  for (const ex of ['N', 'S', 'E', 'W'] as const) {
+    for (const en of ['N', 'S', 'E', 'W'] as const) {
+      candidates.push({ exit: ex, entry: en });
+    }
   }
+
+  let best = candidates[0];
+  let bestScore = -Infinity;
+  for (const c of candidates) {
+    const s = scoreDirPair(from, to, edge, c.exit, c.entry, dx, dy);
+    if (s > bestScore) {
+      bestScore = s;
+      best = c;
+    }
+  }
+  return { exitDir: best.exit, entryDir: best.entry };
+}
+
+/** Score a candidate (exit, entry) pair. Higher is better. */
+function scoreDirPair(
+  from: FlowNode, to: FlowNode, edge: FlowEdge,
+  exit: CardinalDir, entry: CardinalDir, dx: number, dy: number,
+): number {
+  let score = 0;
+
+  // 1. Exit direction should head toward the target half-plane.
+  score += alignmentScore(exit, dx, dy);
+
+  // 2. Entry direction should come *from* the side of the target nearest
+  //    the source — i.e., the entry's outward normal should oppose the
+  //    direction from source→target.
+  score += alignmentScore(entry, -dx, -dy);
+
+  // 3. Decision-target preference: prefer top entry when the source is
+  //    above (dy > 0 in screen coordinates), and side entry when the
+  //    source is roughly level. This is the core fix for diagonal
+  //    source-above-side cases like Clarify Goal → Enough Detail?.
+  if (to.shape === 'decision') {
+    if (dy > 20 && entry === 'N') score += 8; // strongly prefer top
+    if (dy < -20 && entry === 'S') score += 8;
+    // Side entry on a diamond is OK only when truly side-on
+    const sidePenalty = Math.abs(dy) > Math.abs(dx) * 0.6 ? 4 : 0;
+    if ((entry === 'E' || entry === 'W') && sidePenalty) score -= sidePenalty;
+  }
+
+  // 3a. Diagonal-source bias: when the source is diagonally offset from
+  //     the target (both |dx| and |dy| are non-trivial relative to the
+  //     source size), prefer a side-exit so the path travels through
+  //     open space rather than running parallel to the target. This
+  //     matches the sketched "out left, then down into top" behaviour.
+  const fromHalfW = (from.width ?? 180) / 2;
+  const fromHalfH = (from.height ?? 44) / 2;
+  const diagonal =
+    Math.abs(dx) > fromHalfW * 0.6 && Math.abs(dy) > fromHalfH * 1.2;
+  if (diagonal) {
+    if ((dx > 0 && exit === 'E') || (dx < 0 && exit === 'W')) score += 4;
+    // Penalize bottom/top exit when there's plenty of horizontal offset
+    // *and* the entry is top/bottom — the resulting path otherwise hugs
+    // the source's vertical centerline before jogging across.
+    if (
+      ((exit === 'S' || exit === 'N') && Math.abs(dx) > fromHalfW * 0.9) &&
+      (entry === 'N' || entry === 'S')
+    ) {
+      score -= 3;
+    }
+  }
+
+  // 4. Penalize "doubling back" — exit pointing away from the target
+  //    or entry pointing toward the source's far side.
+  if (alignmentScore(exit, dx, dy) < 0) score -= 6;
+  if (alignmentScore(entry, -dx, -dy) < 0) score -= 6;
+
+  // 5. Prefer same-axis routing (fewer bends): if exit and entry are on
+  //    the same axis (both vertical or both horizontal) and dx/dy is
+  //    well-aligned, that's a clean L or straight line.
+  const exitAxis = (exit === 'N' || exit === 'S') ? 'V' : 'H';
+  const entryAxis = (entry === 'N' || entry === 'S') ? 'V' : 'H';
+  if (exitAxis === entryAxis) {
+    // Opposite cardinals on the same axis → straight or single-jog
+    if (
+      (exit === 'N' && entry === 'S') ||
+      (exit === 'S' && entry === 'N') ||
+      (exit === 'E' && entry === 'W') ||
+      (exit === 'W' && entry === 'E')
+    ) {
+      score += 2;
+    } else {
+      // Same direction (e.g. both 'N') usually means a U-turn
+      score -= 3;
+    }
+  }
+
+  // 6. Slight penalty for picking a port that points *away* from the
+  //    other node's half-plane on the perpendicular axis. Keeps the
+  //    selection stable for axis-aligned cases.
+  return score;
+}
+
+/**
+ * Returns +N if `dir` points toward (dx, dy), 0 if perpendicular,
+ * negative if pointing away.
+ */
+function alignmentScore(dir: CardinalDir, dx: number, dy: number): number {
+  // Magnitude of projection along the chosen cardinal axis, sign-checked.
+  switch (dir) {
+    case 'N': return dy < 0 ? Math.abs(dy) / 30 + 1 : -Math.abs(dy) / 30;
+    case 'S': return dy > 0 ? Math.abs(dy) / 30 + 1 : -Math.abs(dy) / 30;
+    case 'E': return dx > 0 ? Math.abs(dx) / 30 + 1 : -Math.abs(dx) / 30;
+    case 'W': return dx < 0 ? Math.abs(dx) / 30 + 1 : -Math.abs(dx) / 30;
+  }
+}
+
+/**
+ * Choose how an edge enters a decision target given the exit direction
+ * from a decision source. Top-entry is preferred when feasible.
+ */
+function pickDecisionEntry(
+  to: FlowNode, dx: number, dy: number, exitDir: CardinalDir,
+): CardinalDir {
+  if (to.shape !== 'decision') {
+    // Generic target: align entry with the dominant axis.
+    if (Math.abs(dy) > Math.abs(dx)) return dy > 0 ? 'N' : 'S';
+    return dx > 0 ? 'W' : 'E';
+  }
+  // Decision target: prefer top entry when source is above.
+  if (dy > 20) return 'N';
+  if (dy < -20) return 'S';
+  return dx > 0 ? 'W' : 'E';
 }
 
 // --- Cardinal Port Routing (for swimlanes) ---
@@ -305,7 +479,12 @@ function routeCardinal(
   const pathData = waypointsToRoundedPath(waypoints, r);
   const labelPos = getPathMidpoint(waypoints);
 
-  return { pathData, labelPosition: labelPos };
+  return {
+    pathData,
+    labelPosition: labelPos,
+    waypoints: waypoints.map(p => ({ x: p.x, y: p.y })),
+    yieldOnCross: edge.retry === true,
+  };
 }
 
 // --- Orthogonal Router ---
@@ -316,74 +495,105 @@ function routeOrthogonal(
   to: FlowNode,
   cornerRadius: number,
 ): RouteResult {
-  const { exit, entry } = choosePorts(from, to, edge);
-  const r = cornerRadius;
+  const { exitDir, entryDir } = chooseScoredDirs(from, to, edge);
+  const fromPorts = getNodePorts(from);
+  const toPorts = getNodePorts(to);
+  const exit = portForDir(fromPorts, exitDir);
+  const entry = portForDir(toPorts, entryDir);
 
-  // Build waypoints for an orthogonal path
-  const waypoints: Port[] = [exit];
-
-  const dx = entry.x - exit.x;
-  const dy = entry.y - exit.y;
-
-  // Determine if we need a bend
-  const exitDir = getPortDirection(from, exit);
-  const entryDir = getPortDirection(to, entry);
-
-  if (exitDir === 'down' && entryDir === 'up') {
-    if (Math.abs(dx) < 2) {
-      // Straight down — no bend needed
-    } else {
-      // Need horizontal jog
-      const midY = exit.y + dy / 2;
-      waypoints.push({ x: exit.x, y: midY });
-      waypoints.push({ x: entry.x, y: midY });
-    }
-  } else if (exitDir === 'right' && entryDir === 'up') {
-    // Right then down
-    waypoints.push({ x: entry.x, y: exit.y });
-  } else if (exitDir === 'left' && entryDir === 'up') {
-    // Left then down
-    waypoints.push({ x: entry.x, y: exit.y });
-  } else if (exitDir === 'right' && entryDir === 'left') {
-    // Right to left with mid-point
-    const midX = exit.x + dx / 2;
-    waypoints.push({ x: midX, y: exit.y });
-    waypoints.push({ x: midX, y: entry.y });
-  } else if (exitDir === 'down' && entryDir === 'left') {
-    // Down then right
-    waypoints.push({ x: exit.x, y: entry.y });
-  } else {
-    // Fallback: midpoint routing
-    if (Math.abs(dx) > Math.abs(dy)) {
-      const midX = exit.x + dx / 2;
-      waypoints.push({ x: midX, y: exit.y });
-      waypoints.push({ x: midX, y: entry.y });
-    } else {
-      const midY = exit.y + dy / 2;
-      waypoints.push({ x: exit.x, y: midY });
-      waypoints.push({ x: entry.x, y: midY });
-    }
-  }
-
-  waypoints.push(entry);
-
-  // Convert waypoints to SVG path with rounded corners
-  const pathData = waypointsToRoundedPath(waypoints, r);
+  const waypoints = buildOrthogonalWaypoints(exit, entry, exitDir, entryDir);
+  const pathData = waypointsToRoundedPath(waypoints, cornerRadius);
   const labelPos = getPathMidpoint(waypoints);
 
-  return { pathData, labelPosition: labelPos };
+  return {
+    pathData,
+    labelPosition: labelPos,
+    waypoints: waypoints.map(p => ({ x: p.x, y: p.y })),
+    yieldOnCross: edge.retry === true,
+  };
 }
 
-function getPortDirection(node: FlowNode, port: Port): 'up' | 'down' | 'left' | 'right' {
-  const cx = node.x ?? 0;
-  const cy = node.y ?? 0;
-  const dx = port.x - cx;
-  const dy = port.y - cy;
+/**
+ * Build orthogonal waypoints between two ports given their cardinal
+ * exit/entry directions. Handles all 16 combinations by emitting either
+ * a straight line, an L-bend, or a Z-bend.
+ *
+ * The routing rule, in plain English:
+ *   - If the exit direction is vertical and entry is vertical, jog at
+ *     the midpoint Y (or go straight when X already aligns).
+ *   - If both are horizontal, jog at the midpoint X.
+ *   - Mixed (V↔H) — emit a single L: travel along the exit axis until
+ *     we hit the entry's perpendicular line, then turn.
+ *   - Same direction (e.g. exit=N, entry=N) — emit a U: step out along
+ *     the exit, jog perpendicular at a clear-of-shapes offset, then in.
+ */
+function buildOrthogonalWaypoints(
+  exit: Port,
+  entry: Port,
+  exitDir: CardinalDir,
+  entryDir: CardinalDir,
+): Port[] {
+  const dx = entry.x - exit.x;
+  const dy = entry.y - exit.y;
+  const exitAxis = (exitDir === 'N' || exitDir === 'S') ? 'V' : 'H';
+  const entryAxis = (entryDir === 'N' || entryDir === 'S') ? 'V' : 'H';
+  const points: Port[] = [exit];
 
-  if (Math.abs(dy) > Math.abs(dx)) {
-    return dy > 0 ? 'down' : 'up';
+  // Both vertical
+  if (exitAxis === 'V' && entryAxis === 'V') {
+    if (Math.abs(dx) < 2) {
+      // Straight line
+    } else if (
+      (exitDir === 'S' && entryDir === 'N') ||
+      (exitDir === 'N' && entryDir === 'S')
+    ) {
+      const midY = exit.y + dy / 2;
+      points.push({ x: exit.x, y: midY });
+      points.push({ x: entry.x, y: midY });
+    } else {
+      // Same-side U: step further out along exit axis, then across, then in.
+      const step = exitDir === 'N' ? -30 : 30;
+      const midY = (exitDir === entryDir)
+        ? Math.min(exit.y, entry.y) + step
+        : exit.y + dy / 2;
+      points.push({ x: exit.x, y: midY });
+      points.push({ x: entry.x, y: midY });
+    }
+    points.push(entry);
+    return points;
   }
-  return dx > 0 ? 'right' : 'left';
+
+  // Both horizontal
+  if (exitAxis === 'H' && entryAxis === 'H') {
+    if (Math.abs(dy) < 2) {
+      // Straight line
+    } else if (
+      (exitDir === 'E' && entryDir === 'W') ||
+      (exitDir === 'W' && entryDir === 'E')
+    ) {
+      const midX = exit.x + dx / 2;
+      points.push({ x: midX, y: exit.y });
+      points.push({ x: midX, y: entry.y });
+    } else {
+      const step = exitDir === 'W' ? -30 : 30;
+      const midX = (exitDir === entryDir)
+        ? Math.min(exit.x, entry.x) + step
+        : exit.x + dx / 2;
+      points.push({ x: midX, y: exit.y });
+      points.push({ x: midX, y: entry.y });
+    }
+    points.push(entry);
+    return points;
+  }
+
+  // Mixed: V → H or H → V — single L bend at the corner.
+  if (exitAxis === 'V' && entryAxis === 'H') {
+    points.push({ x: exit.x, y: entry.y });
+  } else {
+    points.push({ x: entry.x, y: exit.y });
+  }
+  points.push(entry);
+  return points;
 }
 
 /**
@@ -524,4 +734,254 @@ function getPathMidpoint(points: Port[]): Port {
   // Fallback
   const mid = Math.floor(points.length / 2);
   return points[mid];
+}
+
+// --- Line Jumps (Visio-style "hops" at unavoidable crossings) ---
+
+/** Radius of the small bump rendered at a line-jump crossing. */
+const JUMP_RADIUS = 4;
+
+interface Segment {
+  x1: number; y1: number;
+  x2: number; y2: number;
+  axis: 'H' | 'V';
+  /** Endpoint coords as a Set for shared-endpoint detection */
+  endpoints: Array<{ x: number; y: number }>;
+}
+
+/**
+ * Detect orthogonal segment crossings between routes and rewrite the
+ * lower-priority edge's path data to render a small arc bump where
+ * its segment crosses a higher-priority edge's segment.
+ *
+ * Crossings are *only* counted between perpendicular segments (H × V).
+ * Shared endpoints (e.g. two edges meeting at the same node port) and
+ * collinear overlaps (parallel segments along the same axis) are
+ * explicitly excluded so we don't draw spurious humps.
+ *
+ * Priority rule: retry/dashed edges (yieldOnCross=true) yield to
+ * non-yielding edges. When two edges have the same yield-flag, the
+ * later edge in the document yields. This keeps the visual deterministic
+ * without requiring a full ranking pass.
+ */
+function applyLineJumps(
+  doc: FlowDocument,
+  routes: Map<string, RouteResult>,
+  cornerRadius: number,
+): void {
+  // Build (edgeKey, segments) list in document order.
+  const ordered: Array<{ key: string; route: RouteResult; segs: Segment[] }> = [];
+  for (let i = 0; i < doc.edges.length; i++) {
+    const edge = doc.edges[i];
+    const key = `${edge.from}->${edge.to}`;
+    const route = routes.get(key);
+    if (!route?.waypoints || route.waypoints.length < 2) continue;
+    ordered.push({ key, route, segs: waypointsToSegments(route.waypoints) });
+  }
+
+  // For each pair, compute crossings of (a × b). The yielding side
+  // gets the bump.
+  // edgeKey -> sorted list of crossings (point on its segment)
+  const jumpsForEdge = new Map<string, Array<{ segIdx: number; t: number; x: number; y: number }>>();
+
+  for (let i = 0; i < ordered.length; i++) {
+    for (let j = i + 1; j < ordered.length; j++) {
+      const a = ordered[i];
+      const b = ordered[j];
+      // Determine which edge yields (gets the hop drawn on it).
+      const aYields = !!a.route.yieldOnCross;
+      const bYields = !!b.route.yieldOnCross;
+      let yielder = b; // default: later edge yields
+      if (aYields && !bYields) yielder = a;
+      else if (!aYields && bYields) yielder = b;
+
+      const crossings = findOrthogonalCrossings(a.segs, b.segs);
+      if (crossings.length === 0) continue;
+
+      const list = jumpsForEdge.get(yielder.key) ?? [];
+      for (const c of crossings) {
+        // Map crossing point onto the yielding edge's segments
+        const segIdx = yielder === a ? c.aSegIdx : c.bSegIdx;
+        const seg = yielder.segs[segIdx];
+        const t = paramOnSegment(seg, c.x, c.y);
+        // Skip jumps too close to segment endpoints — those would be
+        // shared-port joins, not true crossings.
+        if (t < 0.05 || t > 0.95) continue;
+        list.push({ segIdx, t, x: c.x, y: c.y });
+      }
+      if (list.length > 0) jumpsForEdge.set(yielder.key, list);
+    }
+  }
+
+  // Re-emit pathData for any edge that has jumps.
+  for (const [key, jumps] of jumpsForEdge) {
+    const route = routes.get(key);
+    if (!route?.waypoints) continue;
+    const newPath = waypointsToRoundedPathWithJumps(
+      route.waypoints, cornerRadius, jumps,
+    );
+    route.pathData = newPath;
+  }
+}
+
+function waypointsToSegments(points: Array<{ x: number; y: number }>): Segment[] {
+  const segs: Segment[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue; // zero-length
+    const axis: 'H' | 'V' = Math.abs(dx) > Math.abs(dy) ? 'H' : 'V';
+    segs.push({
+      x1: a.x, y1: a.y, x2: b.x, y2: b.y, axis,
+      endpoints: [{ x: a.x, y: a.y }, { x: b.x, y: b.y }],
+    });
+  }
+  return segs;
+}
+
+/**
+ * Return all (perpendicular) crossings between two edge segment lists.
+ * Excludes shared endpoints and collinear overlaps.
+ */
+function findOrthogonalCrossings(
+  aSegs: Segment[], bSegs: Segment[],
+): Array<{ x: number; y: number; aSegIdx: number; bSegIdx: number }> {
+  const out: Array<{ x: number; y: number; aSegIdx: number; bSegIdx: number }> = [];
+  for (let ai = 0; ai < aSegs.length; ai++) {
+    const a = aSegs[ai];
+    for (let bi = 0; bi < bSegs.length; bi++) {
+      const b = bSegs[bi];
+      if (a.axis === b.axis) continue; // collinear or parallel — not a hop
+      const h = a.axis === 'H' ? a : b;
+      const v = a.axis === 'V' ? a : b;
+      const y = h.y1; // horizontal seg's constant y
+      const x = v.x1; // vertical seg's constant x
+      // Strict interior crossing on both segments.
+      const hMinX = Math.min(h.x1, h.x2);
+      const hMaxX = Math.max(h.x1, h.x2);
+      const vMinY = Math.min(v.y1, v.y2);
+      const vMaxY = Math.max(v.y1, v.y2);
+      const eps = 0.5;
+      if (x <= hMinX + eps || x >= hMaxX - eps) continue;
+      if (y <= vMinY + eps || y >= vMaxY - eps) continue;
+      // Skip shared-endpoint crossings (same start/end node).
+      if (sharesEndpoint(a, b, x, y)) continue;
+      out.push({ x, y, aSegIdx: ai, bSegIdx: bi });
+    }
+  }
+  return out;
+}
+
+function sharesEndpoint(a: Segment, b: Segment, x: number, y: number): boolean {
+  for (const ea of a.endpoints) {
+    for (const eb of b.endpoints) {
+      if (Math.abs(ea.x - eb.x) < 1 && Math.abs(ea.y - eb.y) < 1) {
+        // The two segments touch at an endpoint — likely a shared port.
+        // If the crossing point coincides with that endpoint, it's not
+        // a real crossing.
+        if (Math.abs(x - ea.x) < 2 && Math.abs(y - ea.y) < 2) return true;
+        // Even if the crossing isn't the shared endpoint itself, two
+        // segments that share an endpoint cannot cross transversally
+        // unless they're parallel — which we already filtered out.
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function paramOnSegment(seg: Segment, x: number, y: number): number {
+  if (seg.axis === 'H') {
+    const len = seg.x2 - seg.x1;
+    if (Math.abs(len) < 0.5) return 0;
+    return (x - seg.x1) / len;
+  }
+  const len = seg.y2 - seg.y1;
+  if (Math.abs(len) < 0.5) return 0;
+  return (y - seg.y1) / len;
+}
+
+/**
+ * Same as waypointsToRoundedPath but inserts a small arc "bump" where
+ * the path crosses another edge. Bumps render as a 180° arc above/right
+ * of the crossing depending on segment orientation.
+ */
+function waypointsToRoundedPathWithJumps(
+  points: Array<{ x: number; y: number }>,
+  radius: number,
+  jumps: Array<{ segIdx: number; t: number; x: number; y: number }>,
+): string {
+  if (points.length < 2) return '';
+
+  // Group jumps by segment index, sorted by parameter t along the segment.
+  const jumpsBySeg = new Map<number, Array<{ t: number; x: number; y: number }>>();
+  for (const j of jumps) {
+    const list = jumpsBySeg.get(j.segIdx) ?? [];
+    list.push({ t: j.t, x: j.x, y: j.y });
+    jumpsBySeg.set(j.segIdx, list);
+  }
+  for (const [, list] of jumpsBySeg) {
+    list.sort((p, q) => p.t - q.t);
+  }
+
+  let d = `M${points[0].x},${points[0].y}`;
+
+  // Walk segments. When we have a jump on segment i, draw a partial line
+  // up to the bump-start, then an arc, then continue.
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const segJumps = jumpsBySeg.get(i) ?? [];
+    const dxs = b.x - a.x;
+    const dys = b.y - a.y;
+    const len = Math.hypot(dxs, dys);
+    const ux = len > 0 ? dxs / len : 0;
+    const uy = len > 0 ? dys / len : 0;
+    let cursor = { x: a.x, y: a.y };
+
+    for (const jump of segJumps) {
+      const r = JUMP_RADIUS;
+      // Entry/exit points on the segment, r away from the crossing.
+      const enter = { x: jump.x - ux * r, y: jump.y - uy * r };
+      const exit = { x: jump.x + ux * r, y: jump.y + uy * r };
+      // Draw line to the entry of the bump.
+      d += ` L${enter.x},${enter.y}`;
+      // Arc convention: sweep so the bump rises "above" (negative-y for
+      // horizontal segs) or "right" (positive-x for vertical segs). The
+      // sweep flag (1) renders a clockwise half-circle in SVG coords for
+      // a horizontal segment moving in +x; flipping for −x stays visually
+      // consistent because the arc encompasses the same crossing point.
+      const sweep = 1;
+      d += ` A${r},${r} 0 0 ${sweep} ${exit.x},${exit.y}`;
+      cursor = exit;
+    }
+
+    // After bumps (if any), check if the next waypoint is a corner that
+    // needs rounding.
+    if (i < points.length - 2) {
+      // Round the corner at b: emit the standard rounded-corner pattern.
+      const next = points[i + 2];
+      const toPrev = { x: cursor.x - b.x, y: cursor.y - b.y };
+      const toNext = { x: next.x - b.x, y: next.y - b.y };
+      const lenPrev = Math.hypot(toPrev.x, toPrev.y);
+      const lenNext = Math.hypot(toNext.x, toNext.y);
+      const r2 = Math.min(radius, lenPrev / 2, lenNext / 2);
+      if (r2 < 1) {
+        d += ` L${b.x},${b.y}`;
+      } else {
+        const sx = b.x + (toPrev.x / lenPrev) * r2;
+        const sy = b.y + (toPrev.y / lenPrev) * r2;
+        const ex = b.x + (toNext.x / lenNext) * r2;
+        const ey = b.y + (toNext.y / lenNext) * r2;
+        d += ` L${sx},${sy}`;
+        d += ` Q${b.x},${b.y} ${ex},${ey}`;
+      }
+    } else {
+      d += ` L${b.x},${b.y}`;
+    }
+  }
+
+  return d;
 }
