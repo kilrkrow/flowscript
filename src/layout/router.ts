@@ -45,6 +45,14 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
   const routes = new Map<string, RouteResult>();
   const hasLanes = doc.lanes.length > 0;
 
+  // Pre-pass: when a decision has multiple outgoing edges, distribute
+  // them across distinct cardinal sides (S/E/W/N) so later branches
+  // don't stack on top of the first. Without this, custom-condition
+  // edges (or repeated yes/no) all picked the same side via the
+  // independent geometry scorer, making them visually overlap — which
+  // is the "decision lacks a branch beyond the first" bug.
+  const decisionExitDir = assignDecisionExits(doc);
+
   // Pre-compute port spread offsets: count how many edges share the same
   // (node, cardinal direction) so we can spread them along the edge.
   const portUsage = new Map<string, number>(); // "nodeId:N" -> count
@@ -52,11 +60,14 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
 
   if (hasLanes) {
     // First pass: count
-    for (const edge of doc.edges) {
+    for (let i = 0; i < doc.edges.length; i++) {
+      const edge = doc.edges[i];
       const fromNode = doc.nodes.get(edge.from);
       const toNode = doc.nodes.get(edge.to);
       if (!fromNode || !toNode) continue;
-      const { exitDir, entryDir } = chooseCardinalDirs(fromNode, toNode, edge);
+      const { exitDir, entryDir } = chooseCardinalDirs(
+        fromNode, toNode, edge, decisionExitDir.get(edgeId(i, edge)),
+      );
       const exitKey = `${edge.from}:${exitDir}:exit`;
       const entryKey = `${edge.to}:${entryDir}:entry`;
       portUsage.set(exitKey, (portUsage.get(exitKey) ?? 0) + 1);
@@ -64,14 +75,17 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
     }
     // Second pass: assign indices
     const portCursor = new Map<string, number>();
-    for (const edge of doc.edges) {
+    for (let i = 0; i < doc.edges.length; i++) {
+      const edge = doc.edges[i];
       const fromNode = doc.nodes.get(edge.from);
       const toNode = doc.nodes.get(edge.to);
       if (!fromNode || !toNode) continue;
-      const { exitDir, entryDir } = chooseCardinalDirs(fromNode, toNode, edge);
+      const { exitDir, entryDir } = chooseCardinalDirs(
+        fromNode, toNode, edge, decisionExitDir.get(edgeId(i, edge)),
+      );
       const exitKey = `${edge.from}:${exitDir}:exit`;
       const entryKey = `${edge.to}:${entryDir}:entry`;
-      const edgeKey = `${edge.from}->${edge.to}`;
+      const edgeKey = edgeId(i, edge);
       const ei = portCursor.get(exitKey) ?? 0;
       const ni = portCursor.get(entryKey) ?? 0;
       portIndex.set(`exit:${edgeKey}`, ei);
@@ -81,21 +95,23 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
     }
   }
 
-  for (const edge of doc.edges) {
+  for (let i = 0; i < doc.edges.length; i++) {
+    const edge = doc.edges[i];
     const fromNode = doc.nodes.get(edge.from);
     const toNode = doc.nodes.get(edge.to);
     if (!fromNode || !toNode) continue;
 
     const key = `${edge.from}->${edge.to}`;
+    const overrideExit = decisionExitDir.get(edgeId(i, edge));
     let result: RouteResult;
 
     if (hasLanes) {
       result = routeCardinal(
         edge, fromNode, toNode, cornerRadius,
-        portUsage, portIndex,
+        portUsage, portIndex, i, overrideExit,
       );
     } else {
-      result = routeEdge(edge, fromNode, toNode, style, cornerRadius);
+      result = routeEdge(edge, fromNode, toNode, style, cornerRadius, overrideExit);
     }
     routes.set(key, result);
   }
@@ -116,10 +132,11 @@ function routeEdge(
   to: FlowNode,
   style: RoutingStyle,
   cornerRadius: number,
+  overrideExit?: CardinalDir,
 ): RouteResult {
   switch (style) {
     case 'orthogonal':
-      return routeOrthogonal(edge, from, to, cornerRadius);
+      return routeOrthogonal(edge, from, to, cornerRadius, overrideExit);
     case 'bezier':
       return routeBezier(from, to);
     case 'polyline':
@@ -187,11 +204,17 @@ function portForDir(
  */
 function chooseScoredDirs(
   from: FlowNode, to: FlowNode, edge: FlowEdge,
+  overrideExit?: CardinalDir,
 ): { exitDir: CardinalDir; entryDir: CardinalDir } {
   const fc = getNodeCenter(from);
   const tc = getNodeCenter(to);
   const dx = tc.x - fc.x;
   const dy = tc.y - fc.y;
+
+  // Multi-branch decision pre-pass already chose this edge's exit side.
+  if (overrideExit && from.shape === 'decision') {
+    return { exitDir: overrideExit, entryDir: pickDecisionEntry(to, dx, dy, overrideExit) };
+  }
 
   // Decision-source convention: keep the long-standing "yes/no" semantics
   // so existing diagrams don't shift. Only the *generic* case is rescored.
@@ -342,15 +365,142 @@ function pickDecisionEntry(
 type CardinalDir = 'N' | 'S' | 'E' | 'W';
 
 /**
+ * Stable edge key that includes the edge's document index, so duplicate
+ * (from, to) edges (e.g. an explicit yes-branch plus an implicit
+ * fall-through to the same target) don't share routing state.
+ */
+function edgeId(index: number, edge: FlowEdge): string {
+  return `${index}:${edge.from}->${edge.to}`;
+}
+
+/**
+ * For each decision source with multiple outgoing edges, assign each
+ * edge a distinct cardinal exit direction (S/E/W/N). Without this,
+ * the per-edge direction scorers picked the same side for every branch
+ * with similar geometry — e.g. three custom-condition branches like
+ * `high`/`medium`/`low` all stacking on the East tip.
+ *
+ * Allocation rules:
+ *   - yes / true             → S (preserves the long-standing convention)
+ *   - no / false             → opposite horizontal (E or W) of the
+ *                               nearest non-yes branch's geometry
+ *   - remaining branches      → assigned in document order, picking the
+ *                               cardinal whose alignment with the
+ *                               target's offset is best while still
+ *                               unused.
+ *
+ * Diamonds have only four tips; if a decision has more than four
+ * branches the surplus simply reuses the best-scoring side. (The
+ * intent is to fix the common 3- to 4-branch case, not to invent a
+ * full channel router.)
+ */
+function assignDecisionExits(doc: FlowDocument): Map<string, CardinalDir> {
+  const out = new Map<string, CardinalDir>();
+
+  // Group outgoing edges by decision source (with their original
+  // document index, used as the edge's identity).
+  const byDecision = new Map<string, Array<{ idx: number; edge: FlowEdge }>>();
+  for (let i = 0; i < doc.edges.length; i++) {
+    const edge = doc.edges[i];
+    const fromNode = doc.nodes.get(edge.from);
+    if (!fromNode || fromNode.shape !== 'decision') continue;
+    const list = byDecision.get(edge.from) ?? [];
+    list.push({ idx: i, edge });
+    byDecision.set(edge.from, list);
+  }
+
+  for (const [decisionId, branches] of byDecision) {
+    if (branches.length < 2) continue; // single branch: leave to scorer
+    const from = doc.nodes.get(decisionId);
+    if (!from) continue;
+
+    const used = new Set<CardinalDir>();
+    // Reserve N for the (likely) incoming edge so we don't conflict
+    // with the natural "enter from top" routing into the diamond.
+    const preferOrder: CardinalDir[] = ['S', 'E', 'W', 'N'];
+
+    // Pass 1: honor yes/true by pinning to S.
+    for (const { idx, edge } of branches) {
+      if (edge.condition === 'yes' || edge.condition === 'true') {
+        out.set(edgeId(idx, edge), 'S');
+        used.add('S');
+      }
+    }
+
+    // Pass 2: honor no/false by pinning to the side that points toward
+    // the target.
+    for (const { idx, edge } of branches) {
+      if (out.has(edgeId(idx, edge))) continue;
+      if (edge.condition === 'no' || edge.condition === 'false') {
+        const to = doc.nodes.get(edge.to);
+        const dx = (to?.x ?? 0) - (from.x ?? 0);
+        let pick: CardinalDir = dx >= 0 ? 'E' : 'W';
+        if (used.has(pick)) {
+          pick = pick === 'E' ? 'W' : 'E';
+        }
+        if (used.has(pick)) {
+          // Fall back to first unused.
+          pick = preferOrder.find(d => !used.has(d)) ?? pick;
+        }
+        out.set(edgeId(idx, edge), pick);
+        used.add(pick);
+      }
+    }
+
+    // Pass 3: assign remaining branches in document order, preferring
+    // the cardinal that best aligns with the branch target's geometry.
+    // When all four sides are taken, recycle the preference order so
+    // overflow branches still get *some* cardinal (and re-stack on it
+    // — better than no override at all).
+    for (const { idx, edge } of branches) {
+      const key = edgeId(idx, edge);
+      if (out.has(key)) continue;
+      const to = doc.nodes.get(edge.to);
+      const dx = (to?.x ?? 0) - (from.x ?? 0);
+      const dy = (to?.y ?? 0) - (from.y ?? 0);
+
+      const candidates = used.size >= 4
+        ? preferOrder
+        : preferOrder.filter(d => !used.has(d));
+      let bestDir: CardinalDir = candidates[0] ?? 'S';
+      let bestScore = -Infinity;
+      for (const d of candidates) {
+        let s = 0;
+        if (d === 'S' && dy > 0) s += Math.abs(dy);
+        if (d === 'N' && dy < 0) s += Math.abs(dy);
+        if (d === 'E' && dx > 0) s += Math.abs(dx);
+        if (d === 'W' && dx < 0) s += Math.abs(dx);
+        if (s > bestScore) { bestScore = s; bestDir = d; }
+      }
+      out.set(key, bestDir);
+      used.add(bestDir);
+    }
+  }
+
+  return out;
+}
+
+/**
  * Choose cardinal exit/entry directions based on relative node positions.
  * Same-lane: vertical (N/S). Cross-lane: horizontal (E/W) + vertical approach.
  */
 function chooseCardinalDirs(
   from: FlowNode, to: FlowNode, edge: FlowEdge,
+  overrideExit?: CardinalDir,
 ): { exitDir: CardinalDir; entryDir: CardinalDir } {
   const dx = (to.x ?? 0) - (from.x ?? 0);
   const dy = (to.y ?? 0) - (from.y ?? 0);
   const sameLane = from.lane && from.lane === to.lane;
+
+  // Multi-branch decision pre-pass takes precedence so each branch
+  // gets its own diamond tip.
+  if (overrideExit && from.shape === 'decision') {
+    const entryDir: CardinalDir =
+      overrideExit === 'S' || overrideExit === 'N'
+        ? (dy >= 0 ? 'N' : 'S')
+        : (dy > 30 ? 'N' : dy < -30 ? 'S' : (overrideExit === 'E' ? 'W' : 'E'));
+    return { exitDir: overrideExit, entryDir };
+  }
 
   if (sameLane || Math.abs(dx) < 10) {
     // Same lane or vertically aligned: use vertical ports
@@ -411,9 +561,11 @@ function routeCardinal(
   cornerRadius: number,
   portUsage: Map<string, number>,
   portIndex: Map<string, number>,
+  edgeIndex: number,
+  overrideExit?: CardinalDir,
 ): RouteResult {
-  const { exitDir, entryDir } = chooseCardinalDirs(from, to, edge);
-  const edgeKey = `${edge.from}->${edge.to}`;
+  const { exitDir, entryDir } = chooseCardinalDirs(from, to, edge, overrideExit);
+  const edgeKey = edgeId(edgeIndex, edge);
 
   const exitTotal = portUsage.get(`${edge.from}:${exitDir}:exit`) ?? 1;
   const exitIdx = portIndex.get(`exit:${edgeKey}`) ?? 0;
@@ -494,8 +646,9 @@ function routeOrthogonal(
   from: FlowNode,
   to: FlowNode,
   cornerRadius: number,
+  overrideExit?: CardinalDir,
 ): RouteResult {
-  const { exitDir, entryDir } = chooseScoredDirs(from, to, edge);
+  const { exitDir, entryDir } = chooseScoredDirs(from, to, edge, overrideExit);
   const fromPorts = getNodePorts(from);
   const toPorts = getNodePorts(to);
   const exit = portForDir(fromPorts, exitDir);
