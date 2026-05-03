@@ -351,14 +351,28 @@ function chooseScoredDirs(
   // Decision-source convention: keep the long-standing "yes/no" semantics
   // so existing diagrams don't shift. Only the *generic* case is rescored.
   if (from.shape === 'decision') {
-    if (edge.condition === 'yes' || edge.condition === 'true' ||
-        (!edge.condition && Math.abs(dy) > Math.abs(dx))) {
+    const isNo = edge.condition === 'no' || edge.condition === 'false';
+    const isYes = edge.condition === 'yes' || edge.condition === 'true';
+
+    // Loop-back (upward) path: force side-exit/side-entry
+    if (dy < -20) {
+      const exitDir: CardinalDir = dx <= 0 ? 'W' : 'E';
+      return { exitDir, entryDir: exitDir === 'W' ? 'W' : 'E' };
+    }
+
+    if (isYes || (!edge.condition && Math.abs(dy) > Math.abs(dx))) {
       return { exitDir: 'S', entryDir: pickDecisionEntry(to, dx, dy, 'S') };
     }
-    if (edge.condition === 'no' || edge.condition === 'false') {
+    if (isNo) {
       const exitDir: CardinalDir = dx >= 0 ? 'E' : 'W';
       return { exitDir, entryDir: pickDecisionEntry(to, dx, dy, exitDir) };
     }
+  }
+
+  // Generic loop-back for any node type: force side-routing
+  if (dy < -20) {
+    const exitDir: CardinalDir = dx <= 0 ? 'W' : 'E';
+    return { exitDir, entryDir: exitDir === 'W' ? 'W' : 'E' };
   }
 
   const candidates: Array<{ exit: CardinalDir; entry: CardinalDir }> = [];
@@ -389,6 +403,12 @@ function scoreDirPair(
 
   // 1. Exit direction should head toward the target half-plane.
   score += alignmentScore(exit, dx, dy);
+
+  // 1b. Decision source constraint: NEVER exit North from a diamond.
+  // The North point is reserved for entry flow.
+  if (from.shape === 'decision' && exit === 'N') {
+    score -= 30;
+  }
 
   // 2. Entry direction should come *from* the side of the target nearest
   //    the source — i.e., the entry's outward normal should oppose the
@@ -1019,8 +1039,14 @@ function predictLocalDirs(
       entryDir = toRow > fromRow ? 'N' : (overrideExit === 'E' ? 'W' : 'E');
     }
   } else if (fromCol === toCol) {
-    exitDir = toRow > fromRow ? 'S' : 'N';
-    entryDir = toRow > fromRow ? 'N' : 'S';
+    if (toRow < fromRow) {
+      // Upward loop: force side-exit and side-entry to avoid the vertical spine
+      exitDir = 'W'; 
+      entryDir = 'W';
+    } else {
+      exitDir = 'S';
+      entryDir = 'N';
+    }
   } else {
     const fromColInfo = meta.columns.get(fromCol)!;
     const toColInfo = meta.columns.get(toCol)!;
@@ -1075,8 +1101,11 @@ function predictSkipDirs(
   // horizontal cross-row sweep would pierce another node in the row.
   const fromRow = meta.nodeRow.get(edge.from) ?? 0;
   const toRow = meta.nodeRow.get(edge.to) ?? 0;
-  const goingDown = (to.y ?? 0) > (from.y ?? 0);
-  if (anyNodeInRowBetween(meta, edge.from, fromRow, exitDir)) {
+  const goingDown = toRow > fromRow;
+  if (toRow < fromRow) {
+    // Upward skip loop: force side-ports
+    exitDir = fromSide > 0 ? 'E' : 'W';
+  } else if (anyNodeInRowBetween(meta, edge.from, fromRow, exitDir)) {
     exitDir = goingDown ? 'S' : 'N';
   }
 

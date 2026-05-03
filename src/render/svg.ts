@@ -258,9 +258,9 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
     // theme overrides target yes/no/retry edges with CSS.
     const cond = (edge.condition ?? '').toLowerCase();
     const semanticClass =
-      isDashed                                 ? 'fs-edge-retry'
+      cond === 'no'  || cond === 'false'     ? 'fs-edge-no'
       : cond === 'yes' || cond === 'true'      ? 'fs-edge-yes'
-      : cond === 'no'  || cond === 'false'     ? 'fs-edge-no'
+      : isDashed                               ? 'fs-edge-retry'
       : '';
 
     // Theme color override for the path stroke when a semantic class
@@ -298,11 +298,11 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
       const ly = route.labelPosition.y;
 
       // Background rect for label readability
-      const lblWidth = labelText.length * 7 + 12;
+      const lblWidth = labelText.length * 7.5 + 12;
       edgeGroup.push(el('rect', {
-        x: lx - lblWidth / 2, y: ly - 9,
-        width: lblWidth, height: 18,
-        rx: 4, fill: '#ffffff', stroke: 'none', opacity: 0.9,
+        x: lx - lblWidth / 2, y: ly - 10,
+        width: lblWidth, height: 20,
+        rx: 4, fill: '#ffffff', stroke: 'none', opacity: 1,
       }));
       edgeGroup.push(el('text', {
         x: lx, y: ly,

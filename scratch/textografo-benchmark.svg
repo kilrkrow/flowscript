@@ -1,0 +1,297 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-140 -40 600 2139" width="600" height="2139" class="fs-diagram">
+  <defs>
+    <marker id="fs-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#5a5a62" class="fs-arrow-head"/>
+    </marker>
+    <marker id="fs-arrow-yes" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#2e7d32" class="fs-arrow-head"/>
+    </marker>
+    <marker id="fs-arrow-no" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#c62828" class="fs-arrow-head"/>
+    </marker>
+    <marker id="fs-arrow-retry" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#7e57c2" class="fs-arrow-head"/>
+    </marker>
+    <filter id="fs-shadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#00000018"/>
+    </filter>
+  </defs>
+  <g/>
+  <g/>
+  <g class="fs-edges">
+    <g class="fs-edge" data-from="n1" data-to="n2">
+      <path d="M0,56 L0,116" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n2" data-to="n3">
+      <path d="M0,172 L0,232" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n3" data-to="n4">
+      <path d="M0,342 L0,403" fill="none" stroke="#2e7d32" stroke-width="1.5" marker-end="url(#fs-arrow-yes)" class="fs-edge-path fs-edge-yes"/>
+      <rect x="-16.5" y="364" width="33" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="0" y="373" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" font-style="normal" class="fs-edge-label">yes</text>
+    </g>
+    <g class="fs-edge" data-from="n3" data-to="n5">
+      <path d="M90,287 L312,287 Q320,287 320,295 L320,402" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+      <rect x="180" y="278" width="166" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="263" y="287" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="500" fill="#6a6a72" font-style="italic" class="fs-edge-label">Create a new flowchart</text>
+    </g>
+    <g class="fs-edge" data-from="n4" data-to="n6">
+      <path d="M0,459 L0,520" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n6" data-to="n7">
+      <path d="M0,630 L0,690" fill="none" stroke="#2e7d32" stroke-width="1.5" marker-end="url(#fs-arrow-yes)" class="fs-edge-path fs-edge-yes"/>
+      <rect x="-16.5" y="651" width="33" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="0" y="660" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" font-style="normal" class="fs-edge-label">yes</text>
+    </g>
+    <g class="fs-edge" data-from="n6" data-to="n8">
+      <path d="M90,575 L312,575 Q320,575 320,583 L320,694" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+      <rect x="182" y="566" width="166" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="265" y="575" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="500" fill="#6a6a72" font-style="italic" class="fs-edge-label">Create a new flowchart</text>
+    </g>
+    <g class="fs-edge" data-from="n7" data-to="n9">
+      <path d="M0,754 L0,814" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n9" data-to="n10">
+      <path d="M0,924 L0,984" fill="none" stroke="#2e7d32" stroke-width="1.5" marker-end="url(#fs-arrow-yes)" class="fs-edge-path fs-edge-yes"/>
+      <rect x="-16.5" y="945" width="33" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="0" y="954" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" font-style="normal" class="fs-edge-label">yes</text>
+    </g>
+    <g class="fs-edge" data-from="n9" data-to="n11">
+      <path d="M90,869 L312,869 Q320,869 320,877 L320,992.5" fill="none" stroke="#c62828" stroke-width="1.5" marker-end="url(#fs-arrow-no)" class="fs-edge-path fs-edge-no"/>
+      <rect x="254" y="860" width="26" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="267" y="869" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" font-style="normal" class="fs-edge-label">No</text>
+    </g>
+    <g class="fs-edge" data-from="n10" data-to="n12">
+      <path d="M0,1059 L0,1120" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n12" data-to="n13">
+      <path d="M0,1176 L0,1237" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n13" data-to="n14">
+      <path d="M0,1293 L0,1353" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n14" data-to="n15">
+      <path d="M0,1411 L0,1471" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n15" data-to="n16">
+      <path d="M0,1581 L0,1641" fill="none" stroke="#2e7d32" stroke-width="1.5" marker-end="url(#fs-arrow-yes)" class="fs-edge-path fs-edge-yes"/>
+      <rect x="-16.5" y="1602" width="33" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="0" y="1611" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" font-style="normal" class="fs-edge-label">yes</text>
+    </g>
+    <g class="fs-edge" data-from="n15" data-to="n10">
+      <path d="M90,1526 L502,1526 Q510,1526 510,1518 L510,1029.5 Q510,1021.5 502,1021.5 L100,1021.5" fill="none" stroke="#7e57c2" stroke-width="1.5" marker-end="url(#fs-arrow-retry)" class="fs-edge-path fs-edge-retry" stroke-dasharray="6,3"/>
+      <rect x="497" y="1270" width="26" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="510" y="1279" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" font-style="normal" class="fs-edge-label">no</text>
+    </g>
+    <g class="fs-edge" data-from="n16" data-to="n17">
+      <path d="M0,1699 L0,1759" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n17" data-to="n18">
+      <path d="M0,1823 L0,1883" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n18" data-to="n19">
+      <path d="M0,1941 L0,1861 Q0,1853 8,1853 L212,1853 Q220,1853 220,1845 L220,1670 L220,1670" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n19" data-to="n20">
+      <path d="M320,1699 L320,1762" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n20" data-to="n21">
+      <path d="M320,1820 L320,1883" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n21" data-to="n22">
+      <path d="M320,1941 L320,2001" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n22" data-to="n15">
+      <path d="M220,2030 L140,2030 Q132,2030 132,2022 L132,1857 A4,4 0 0 1 132,1849 L132,1534 Q132,1526 124,1526 L90,1526" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+    <g class="fs-edge" data-from="n15" data-to="n7">
+      <path d="M0,1581 L0,1449 Q0,1441 8,1441 L502,1441 Q510,1441 510,1433 L510,730 Q510,722 502,722 L32,722" fill="none" stroke="#2e7d32" stroke-width="1.5" marker-end="url(#fs-arrow-yes)" class="fs-edge-path fs-edge-yes"/>
+      <rect x="493.5" y="1159" width="33" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="510" y="1168" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" font-style="normal" class="fs-edge-label">yes</text>
+    </g>
+    <g class="fs-edge" data-from="n15" data-to="n19">
+      <path d="M-90,1526 L-4,1526 A4,4 0 0 1 4,1526 L312,1526 Q320,1526 320,1534 L320,1641" fill="none" stroke="#7e57c2" stroke-width="1.5" marker-end="url(#fs-arrow-retry)" class="fs-edge-path fs-edge-retry" stroke-dasharray="6,3"/>
+      <rect x="160" y="1517" width="26" height="18" rx="4" fill="#ffffff" stroke="none" opacity="0.9"/>
+      <text x="173" y="1526" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" font-style="normal" class="fs-edge-label">no</text>
+    </g>
+    <g class="fs-edge" data-from="n11" data-to="n23">
+      <path d="M320,1050.5 L320,1119" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/>
+    </g>
+  </g>
+  <g class="fs-nodes">
+    <g class="fs-node" data-node-id="n1" data-shape="start" data-line="9">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="0" width="200" height="56" rx="28" fill="#d4edda" stroke="#4caf50" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="28" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#2e7d32" class="fs-label">Sign-up</text>
+    </g>
+    <g class="fs-node" data-node-id="n2" data-shape="process" data-line="10">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="116" width="200" height="56" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="144" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Go through Tutorial</text>
+    </g>
+    <g class="fs-node" data-node-id="n3" data-shape="decision" data-line="12">
+      <g filter="url(#fs-shadow)">
+        <polygon points="0,232 100,287 0,342 -100,287" fill="#fff8e1" stroke="#f9a825" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="287" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#e65100" class="fs-label">Tutorial Done?</text>
+    </g>
+    <g class="fs-node" data-node-id="n4" data-shape="process" data-line="13">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="403" width="200" height="56" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="431" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Create Flowcharts</text>
+    </g>
+    <g class="fs-node" data-node-id="n5" data-shape="process" data-line="14">
+      <g filter="url(#fs-shadow)">
+        <rect x="220" y="402" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="320" y="422.55" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">
+        <tspan x="320" dy="0">No - Let's go step by</tspan>
+        <tspan x="320" dy="16.900000000000002">step</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n6" data-shape="decision" data-line="18">
+      <g filter="url(#fs-shadow)">
+        <polygon points="0,520 100,575 0,630 -100,575" fill="#fff8e1" stroke="#f9a825" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="575" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#e65100" class="fs-label">All Fine?</text>
+    </g>
+    <g class="fs-node" data-node-id="n7" data-shape="circle" data-line="19">
+      <g filter="url(#fs-shadow)">
+        <circle cx="0" cy="722" r="32" fill="#f3e5f5" stroke="#ab47bc" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="705.1" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#6a1b9a" class="fs-label">
+        <tspan x="0" dy="0">Congrats!</tspan>
+        <tspan x="0" dy="16.900000000000002">Level</tspan>
+        <tspan x="0" dy="16.900000000000002">1</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n8" data-shape="process" data-line="20">
+      <g filter="url(#fs-shadow)">
+        <rect x="220" y="694" width="200" height="56" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="320" y="722" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">No - Check This</text>
+    </g>
+    <g class="fs-node" data-node-id="n9" data-shape="decision" data-line="24">
+      <g filter="url(#fs-shadow)">
+        <polygon points="0,814 100,869 0,924 -100,869" fill="#fff8e1" stroke="#f9a825" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="869" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#e65100" class="fs-label">Ready for next level?</text>
+    </g>
+    <g class="fs-node" data-node-id="n10" data-shape="process" data-line="25">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="984" width="200" height="75" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="1004.6" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">
+        <tspan x="0" dy="0">Create a</tspan>
+        <tspan x="0" dy="16.900000000000002">cross-functional</tspan>
+        <tspan x="0" dy="16.900000000000002">flowchart</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n11" data-shape="process" data-line="26">
+      <g filter="url(#fs-shadow)">
+        <rect x="220" y="992.5" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="320" y="1013.0500000000001" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">
+        <tspan x="320" dy="0">Click on the PLAY to</tspan>
+        <tspan x="320" dy="16.900000000000002">check your work</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n12" data-shape="process" data-line="29">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="1120" width="200" height="56" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="1148" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Create a subprocess</text>
+    </g>
+    <g class="fs-node" data-node-id="n13" data-shape="process" data-line="30">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="1237" width="200" height="56" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="1265" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Create a bridge</text>
+    </g>
+    <g class="fs-node" data-node-id="n14" data-shape="process" data-line="31">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="1353" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="1382" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Connect Distant Shape</text>
+    </g>
+    <g class="fs-node" data-node-id="n15" data-shape="decision" data-line="33">
+      <g filter="url(#fs-shadow)">
+        <polygon points="0,1471 100,1526 0,1581 -100,1526" fill="#fff8e1" stroke="#f9a825" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="1526" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#e65100" class="fs-label">Done?</text>
+    </g>
+    <g class="fs-node" data-node-id="n16" data-shape="process" data-line="34">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="1641" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="1661.55" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">
+        <tspan x="0" dy="0">Click on PLAY to check</tspan>
+        <tspan x="0" dy="16.900000000000002">your work</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n17" data-shape="circle" data-line="38">
+      <g filter="url(#fs-shadow)">
+        <circle cx="0" cy="1791" r="32" fill="#f3e5f5" stroke="#ab47bc" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="1774.1000000000001" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#6a1b9a" class="fs-label">
+        <tspan x="0" dy="0">Congrats!</tspan>
+        <tspan x="0" dy="16.900000000000002">Level</tspan>
+        <tspan x="0" dy="16.900000000000002">2</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n18" data-shape="end" data-line="39">
+      <g filter="url(#fs-shadow)">
+        <rect x="-100" y="1883" width="200" height="58" rx="29" fill="#eceff1" stroke="#78909c" stroke-width="1.2"/>
+      </g>
+      <text x="0" y="1903.55" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#37474f" class="fs-label">
+        <tspan x="0" dy="0">You're done...for the</tspan>
+        <tspan x="0" dy="16.900000000000002">moment :)</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n19" data-shape="process" data-line="42">
+      <g filter="url(#fs-shadow)">
+        <rect x="220" y="1641" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="320" y="1670" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Create a new flowchart</text>
+    </g>
+    <g class="fs-node" data-node-id="n20" data-shape="process" data-line="43">
+      <g filter="url(#fs-shadow)">
+        <rect x="220" y="1762" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="320" y="1782.55" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">
+        <tspan x="320" dy="0">Create a decision</tspan>
+        <tspan x="320" dy="16.900000000000002">bridge</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n21" data-shape="process" data-line="44">
+      <g filter="url(#fs-shadow)">
+        <rect x="220" y="1883" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="320" y="1903.55" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">
+        <tspan x="320" dy="0">Add a label to a</tspan>
+        <tspan x="320" dy="16.900000000000002">connector</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n22" data-shape="process" data-line="45">
+      <g filter="url(#fs-shadow)">
+        <rect x="220" y="2001" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/>
+      </g>
+      <text x="320" y="2021.55" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">
+        <tspan x="320" dy="0">Zoom on a particular</tspan>
+        <tspan x="320" dy="16.900000000000002">part of diagram</tspan>
+      </text>
+    </g>
+    <g class="fs-node" data-node-id="n23" data-shape="end" data-line="53">
+      <g filter="url(#fs-shadow)">
+        <rect x="220" y="1119" width="200" height="58" rx="29" fill="#eceff1" stroke="#78909c" stroke-width="1.2"/>
+      </g>
+      <text x="320" y="1139.55" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#37474f" class="fs-label">
+        <tspan x="320" dy="0">Have a rest and come</tspan>
+        <tspan x="320" dy="16.900000000000002">back later! :)</tspan>
+      </text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,53 @@
+---
+title: Learning Textografo Benchmark (Dagre)
+---
+
+@theme clean
+@direction TB
+@layout dagre
+
+#start Sign-up
+Go through Tutorial
+
+#decision Tutorial Done?
+  -> yes: Create Flowcharts
+  -> "No - Let's go step by step": Create a new flowchart
+
+Create Flowcharts
+
+#decision All Fine?
+  -> yes: #circle Congrats! Level 1
+  -> "No - Check This": Create a new flowchart
+
+#circle Congrats! Level 1
+
+#decision Ready for next level?
+  -> yes: Create a cross-functional flowchart
+  -> No: Click on the PLAY to check your work
+
+Create a cross-functional flowchart
+Create a subprocess
+Create a bridge
+Connect Distant Shape
+
+#decision Done?
+  -> yes: Click on PLAY to check your work
+  ~> no: Create a cross-functional flowchart
+
+Click on PLAY to check your work
+#circle Congrats! Level 2
+#end "You're done...for the moment :)"
+
+// The "No" branch from "Tutorial Done?" or "All Fine?"
+Create a new flowchart
+Create a decision bridge
+Add a label to a connector
+Zoom on a particular part of diagram
+
+#decision Done?
+  -> yes: #circle Congrats! Level 1
+  ~> no: Create a new flowchart
+
+// Exit path for "No" on "Ready for next level?"
+Click on the PLAY to check your work
+#end "Have a rest and come back later! :)"

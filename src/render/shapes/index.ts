@@ -32,6 +32,7 @@ export function renderNode(node: FlowNode, theme: Theme): SvgElement {
     class: 'fs-node',
     'data-node-id': node.id,
     'data-shape': node.shape,
+    ...(node.line !== undefined ? { 'data-line': node.line } : {}),
   },
     ...(theme.node.shadow ? [wrapWithShadow(shapeEl)] : [shapeEl]),
     textEl,

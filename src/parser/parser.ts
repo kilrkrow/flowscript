@@ -342,7 +342,7 @@ class Parser {
       label = shape.charAt(0).toUpperCase() + shape.slice(1);
     }
 
-    const nodeId = this.ensureNode(label, shape);
+    const nodeId = this.ensureNode(label, shape, shapeToken.line);
     const style = this.tryParseStyle();
     if (style) {
       const node = this.doc.nodes.get(nodeId)!;
@@ -377,12 +377,13 @@ class Parser {
   // --- Text lines (plain node labels) ---
 
   private parseTextLine(): string | null {
-    const label = this.advance().value;
+    const labelToken = this.advance();
+    const label = labelToken.value;
     if (!label) return null;
 
     // Check if this node already exists (i.e., this is a re-reference)
     const isExistingNode = this.nodeExistsByLabel(label);
-    const nodeId = this.ensureNode(label, 'process');
+    const nodeId = this.ensureNode(label, 'process', labelToken.line);
     const style = this.tryParseStyle();
     if (style) {
       const node = this.doc.nodes.get(nodeId)!;
@@ -432,7 +433,7 @@ class Parser {
 
     if (!label) label = atId;
 
-    const nodeId = this.ensureNode(label, shape);
+    const nodeId = this.ensureNode(label, shape, idToken.line);
     this.idMap.set(atId, nodeId);
 
     const style = this.tryParseStyle();
@@ -518,13 +519,17 @@ class Parser {
         else targetLabel = targetShape.charAt(0).toUpperCase() + targetShape.slice(1);
       } else if (this.peek().type === 'TEXT') {
         targetLabel = this.advance().value;
+        // Consume subsequent words for multi-word labels
+        while (this.peek().type === 'TEXT') {
+          targetLabel += ' ' + this.advance().value;
+        }
       } else if (this.peek().type === 'STRING') {
         targetLabel = this.advance().value;
       }
 
       if (!targetLabel) continue;
 
-      const targetId = this.ensureNode(targetLabel, targetShape);
+      const targetId = this.ensureNode(targetLabel, targetShape, arrowTok.line);
 
       // Edge label after target: -> Target: "label"
       if (this.peek().type === 'COLON') {
@@ -596,6 +601,10 @@ class Parser {
           else if (this.peek().type === 'STRING') targetLabel = this.advance().value;
         } else if (this.peek().type === 'TEXT') {
           targetLabel = this.advance().value;
+          // Consume subsequent words for multi-word labels
+          while (this.peek().type === 'TEXT') {
+            targetLabel += ' ' + this.advance().value;
+          }
         } else if (this.peek().type === 'STRING') {
           targetLabel = this.advance().value;
         } else if (this.peek().type === 'AT_ID') {
@@ -606,7 +615,7 @@ class Parser {
 
         if (!targetLabel) continue;
 
-        const targetId = this.ensureNode(targetLabel, targetShape);
+        const targetId = this.ensureNode(targetLabel, targetShape, arrowTok.line);
 
         // Optional label after colon
         if (this.peek().type === 'COLON') {
@@ -670,7 +679,7 @@ class Parser {
    * Ensure a node exists in the document, creating it if needed.
    * Handles label-based deduplication and group-qualified names.
    */
-  private ensureNode(label: string, shape: ShapeType): string {
+  private ensureNode(label: string, shape: ShapeType, line?: number): string {
     // Check if a node with this label already exists
     for (const [id, node] of this.doc.nodes) {
       if (node.label === label) {
@@ -689,6 +698,7 @@ class Parser {
       id,
       label,
       shape,
+      line,
       group: this.currentGroup ?? undefined,
       lane: this.currentLane ?? undefined,
     };
