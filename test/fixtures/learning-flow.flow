@@ -1,0 +1,35 @@
+---
+title: Learning Flow — structural stress fixture
+author: FlowScript test suite
+---
+
+@theme clean
+@direction TB
+
+#start Begin Lesson
+  Read Introduction
+  #subprocess Watch Demo Video
+  #decision Did you understand the demo?
+    -> yes: Take Practice Quiz
+    -> no: Re-watch Demo Video
+  Re-watch Demo Video ~> Watch Demo Video: "try again"
+  Take Practice Quiz
+  #decision Quiz score 80%+?
+    -> yes: Advance to Project
+    -> no: Review Concepts
+  Review Concepts
+  #decision Ready to retake quiz?
+    -> yes: Take Practice Quiz
+    -> no: Schedule Tutoring
+  Schedule Tutoring -> Attend Tutoring Session
+  Attend Tutoring Session -> Take Practice Quiz
+  Advance to Project
+    #subprocess Build Capstone Project
+    #decision Project meets criteria?
+      -> yes: Submit For Review
+      -> no: Iterate On Project
+    Iterate On Project ~> Build Capstone Project: "iterate"
+    Submit For Review
+    #decision Reviewer approved?
+      -> yes: #end Lesson Complete
+      -> no: Iterate On Project

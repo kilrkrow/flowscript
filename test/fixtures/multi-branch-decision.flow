@@ -1,0 +1,14 @@
+---
+title: Multi-Branch Decision — three branches must all render visibly
+---
+
+@theme clean
+@direction TB
+
+#start Begin
+  Triage
+  #decision Severity?
+    -> high: Page Oncall
+    -> medium: Open Ticket
+    -> low: Log And Close
+  #end Done

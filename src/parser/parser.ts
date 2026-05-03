@@ -98,6 +98,10 @@ class Parser {
     return this.peek().type === 'EOF';
   }
 
+  private isArrow(t: TokenType): boolean {
+    return t === 'ARROW' || t === 'RETRY_ARROW';
+  }
+
   // --- Frontmatter ---
 
   private parseFrontmatter(): void {
@@ -356,7 +360,15 @@ class Parser {
 
     // Parse decision branches (indented -> yes: / -> no:)
     if (shape === 'decision') {
-      this.parseDecisionBranches(nodeId);
+      const branchCount = this.parseDecisionBranches(nodeId);
+      // When a decision has explicit branches, every successor must be
+      // declared explicitly. Clear the implicit chain so the next sibling
+      // line does not become a phantom unconditional fall-through from
+      // the decision (issue #8). Authors who want a fall-through can
+      // declare it with an explicit `->` arrow.
+      if (branchCount > 0) {
+        this.implicitPrev = null;
+      }
     }
 
     return nodeId;
@@ -377,7 +389,7 @@ class Parser {
       node.style = { ...node.style, ...style };
     }
 
-    const hasExplicitConnection = this.peek().type === 'ARROW';
+    const hasExplicitConnection = this.isArrow(this.peek().type);
     this.parseInlineConnections(nodeId);
 
     // Implicit sequential — add edge from previous node to this one.
@@ -453,8 +465,9 @@ class Parser {
    *   -> #shape Label
    */
   private parseInlineConnections(fromId: string): void {
-    while (this.peek().type === 'ARROW') {
-      this.advance(); // consume ->
+    while (this.isArrow(this.peek().type)) {
+      const arrowTok = this.advance(); // consume -> or ~>
+      const isRetry = arrowTok.type === 'RETRY_ARROW';
 
       let condition: string | undefined;
       let label: string | undefined;
@@ -492,7 +505,7 @@ class Parser {
             if (this.peek().type === 'STRING') label = this.advance().value;
             else if (this.peek().type === 'TEXT') label = this.advance().value;
           }
-          this.addEdge(fromId, resolvedId, label, condition);
+          this.addEdge(fromId, resolvedId, label, condition, isRetry);
           this.implicitPrev = resolvedId;
           if (this.peek().type === 'COMMA') { this.advance(); continue; }
           return;
@@ -520,7 +533,7 @@ class Parser {
         else if (this.peek().type === 'TEXT') label = this.advance().value;
       }
 
-      this.addEdge(fromId, targetId, label, condition);
+      this.addEdge(fromId, targetId, label, condition, isRetry);
       this.implicitPrev = targetId;
 
       if (this.peek().type === 'COMMA') {
@@ -537,10 +550,13 @@ class Parser {
    * Parse indented decision branches:
    *   -> yes: Target
    *   -> no: Target
+   *
+   * Returns the number of branches consumed. Callers use this to decide
+   * whether to break the implicit chain (decisions with explicit
+   * branches must not fall through to the next sibling — issue #8).
    */
-  private parseDecisionBranches(decisionId: string): void {
-    // Peek ahead for indented arrows
-    const saved = this.pos;
+  private parseDecisionBranches(decisionId: string): number {
+    let branchCount = 0;
 
     // Skip newline
     while (this.peek().type === 'NEWLINE') this.advance();
@@ -550,8 +566,9 @@ class Parser {
       const indentPos = this.pos;
       this.advance(); // skip indent
 
-      if (this.peek().type === 'ARROW') {
-        this.advance(); // skip ->
+      if (this.isArrow(this.peek().type)) {
+        const arrowTok = this.advance(); // consume -> or ~>
+        const isRetry = arrowTok.type === 'RETRY_ARROW';
 
         // Condition: "yes:", "no:", etc.
         let condition: string | undefined;
@@ -598,7 +615,8 @@ class Parser {
           else if (this.peek().type === 'TEXT') label = this.advance().value;
         }
 
-        this.addEdge(decisionId, targetId, label, condition);
+        this.addEdge(decisionId, targetId, label, condition, isRetry);
+        branchCount++;
 
         // Skip newlines for next branch
         while (this.peek().type === 'NEWLINE') this.advance();
@@ -608,6 +626,8 @@ class Parser {
         break;
       }
     }
+
+    return branchCount;
   }
 
   // --- Style blocks ---
@@ -676,18 +696,28 @@ class Parser {
     return id;
   }
 
-  private addEdge(from: string, to: string, label?: string, condition?: string): void {
+  private addEdge(
+    from: string, to: string,
+    label?: string, condition?: string, retry?: boolean,
+  ): void {
     // Avoid duplicate edges
     const exists = this.doc.edges.some(
       e => e.from === from && e.to === to && e.condition === condition
     );
     if (exists) return;
 
+    // Backward compatibility: legacy magic-label retries (`try again`,
+    // `resend`) implicitly mark the edge as a retry. New code should
+    // prefer `~>` so retries don't depend on a specific label string.
+    const isMagicRetry =
+      label === 'try again' || label === 'resend';
+
     this.doc.edges.push({
       from,
       to,
       label,
       condition,
+      retry: retry || isMagicRetry || undefined,
     });
   }
 

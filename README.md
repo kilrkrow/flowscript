@@ -8,7 +8,7 @@ A diagram-as-code DSL that renders clean, Visio-quality flowcharts from human-re
   #decision Email Already Exists?
     -> yes: Show Error Message
     -> no: Create Account
-  Show Error Message -> Enter Email & Password: "try again"
+  Show Error Message ~> Enter Email & Password: "try again"
   Create Account
     Send Verification Email
     #end Registration Complete
@@ -102,6 +102,11 @@ author: Your Name
 ```
 @theme clean          // Set the visual theme
 @direction TB         // Flow direction: TB, BT, LR, RL
+@routing orthogonal   // Edge routing: orthogonal, bezier, polyline
+@line-jumps on        // Visio-style hops at edge crossings: on (default), off
+@corner-radius 8      // Radius of orthogonal-edge corners
+@spacing 60           // Dagre node spacing
+@layout grid          // Layout engine: grid (default for TB) or dagre
 ```
 
 ### Shapes
@@ -166,6 +171,26 @@ Step One -> Step Two: "label on edge"
   -> no: #end Done
 ```
 
+**Retry / dashed edges** — use `~>` instead of `->` to render the
+connection with a dashed stroke. This is the explicit way to mark a
+loop-back, retry, or "soft" edge:
+
+```
+#start Submit
+  Validate
+  #decision OK?
+    -> yes: #end Done
+    ~> no: Validate
+```
+
+`~>` works anywhere `->` does — inline, in decision branches, with
+labels and conditions. Edges from `~>` are tagged in the SVG with
+`class="fs-edge-path fs-edge-retry"` so you can style them further.
+
+For backward compatibility, edges whose label is exactly `"try again"`
+or `"resend"` are also rendered dashed even when written with `->`.
+Prefer `~>` in new diagrams — it doesn't depend on a particular label.
+
 ### Groups
 
 ```
@@ -208,6 +233,77 @@ Deploy Fix -> #end Resolved
 ```
 
 Each lane gets a colored background with a rotated header label on the left. Cardinal port routing automatically selects N/S/E/W anchor points and spreads multiple connections along node edges to avoid overlap.
+
+### Layout — Structured Grid (TB default)
+
+Top-down (`@direction TB`) flowcharts use a **structured grid** layout
+by default. The methodology is the "paper-cutout" / infinite-grid
+approach:
+
+1. **Footprint first.** Every node's text is wrapped to a fixed default
+   width (200px), and the node's height grows to fit the wrapped lines
+   *before* placement begins. Nodes never resize after they're cut out.
+2. **Main column + side columns.** The main flow lives in a center
+   column. When a `#decision` has multiple outgoing branches, the
+   "natural" continuation (`yes` / unconditional / first-declared)
+   stays in the source's column; alternate branches (`no`, custom
+   labels) get their own side column to the East or West.
+3. **Reserved channels.** Between every pair of adjacent columns sits a
+   routing channel. Outer channels run beyond the leftmost and rightmost
+   columns. Long-skip edges that would otherwise pierce a downstream
+   node are routed through these channels rather than threaded through
+   shapes.
+4. **Convergence.** When a side branch re-references an existing node,
+   the router uses an outer-channel skip: exit the source's side, drop
+   (or rise) past every bypassed row, then re-enter the target from the
+   side or top.
+
+Override or disable explicitly:
+
+```
+@layout grid     // force grid layout (the default for TB)
+@layout dagre    // fall back to the dagre-powered layout
+```
+
+Grid layout is automatically bypassed when `#lane` swimlanes or
+`#group` containers are present, or when the direction is not TB —
+those paths use dagre.
+
+**Limitations (current pass):**
+- Two-level branch nesting at most. A decision deep inside a side branch
+  places sub-branches one column further out but doesn't reflow the
+  parent grid.
+- Multi-way (>3) decisions get one E and one W column; surplus branches
+  stack onto W.
+- This is a flow-aware *node placer*, not a constraint solver.
+  Pathologically dense flows may still produce overlap; the existing
+  Visio-style line-jumps post-pass is the final fallback.
+
+### Edge Routing
+
+The orthogonal router scores candidate (exit, entry) cardinal pairs
+based on the relative geometry of the source and target nodes. The
+selection rewards:
+
+- exits and entries aligned with the source→target offset,
+- top-entry into a `#decision` diamond when the source sits above it,
+- side-exit from the source when the target is diagonally offset
+  (avoids the awkward "out the bottom, then jog hard sideways" path),
+- fewer bends and clean L-shapes over U-turns.
+
+When two orthogonal edge segments must cross, the renderer draws a
+small Visio-style **line jump** (an arc bump) on the lower-priority
+edge so it visually steps over the other. Priority rules:
+
+- Retry / dashed edges (`~>`) yield to plain edges.
+- Otherwise, the later edge in document order yields.
+- Shared endpoints (two edges leaving the same port) do **not** count
+  as crossings; collinear / parallel overlap also doesn't trigger a
+  hop.
+
+Disable line jumps globally with `@line-jumps off`. There is currently
+no per-edge override or theme-level styling for hops — those are listed
+under the Roadmap.
 
 ### Comments
 
@@ -322,6 +418,9 @@ Every edge is a `<g>` element with:
 
 Inside each edge group:
 - A `<path class="fs-edge-path">` with the routed connection
+  - Retry / dashed edges (written with `~>`, or with the legacy magic
+    labels `try again` / `resend`) carry the additional class
+    `fs-edge-retry` and a `stroke-dasharray`.
 - An optional `<text class="fs-edge-label">` for labeled edges (e.g., "yes", "no", "try again")
 
 ```xml
@@ -410,6 +509,13 @@ svg.querySelectorAll('.fs-node').forEach(g => {
 
 - [x] Swimlanes (`#lane` keyword for actor/persona attribution with horizontal stacking)
 - [x] Cardinal port routing (N/S/E/W anchor points with port spreading)
+- [x] Centralized shape port abstraction with circle / decision support
+- [x] Explicit retry / dashed edge syntax (`~>`)
+- [x] Relative-position-aware port scoring (clean L-shapes for diagonal source→decision routes)
+- [x] Visio-style line jumps for unavoidable orthogonal crossings (`@line-jumps off` to disable)
+- [x] Structured grid layout for TB (paper-cutout footprints, side-column branch placement, outer-channel skip routing)
+- [ ] Per-edge `jump` override / theme-level hop styling (radius, shape, color)
+- [ ] `#io` parallelogram custom ports (currently falls back to rect)
 - [ ] `opentype.js` text measurement (replacing character-width heuristic)
 - [ ] Dark theme
 - [ ] PNG and PDF export

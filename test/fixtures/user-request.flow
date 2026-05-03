@@ -1,0 +1,15 @@
+---
+title: User Request — Clarification Loop
+---
+
+@theme clean
+@direction TB
+
+#group User Request
+  #start Receive Request
+    Clarify Goal
+    #decision Enough Detail?
+      -> yes: Plan Steps
+      ~> no: Clarify Goal
+    Plan Steps
+    #end Done

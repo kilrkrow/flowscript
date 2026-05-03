@@ -1,0 +1,18 @@
+---
+title: Retry Edge Syntax Demo
+---
+
+@theme clean
+@direction TB
+
+#start Submit Form
+  Validate Input
+  #decision Valid?
+    -> yes: Save Record
+    ~> no: Validate Input
+
+  Save Record
+    Send Receipt
+    #decision Delivered?
+      -> yes: #end Done
+      ~> no: Send Receipt
