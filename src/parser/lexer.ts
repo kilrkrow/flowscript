@@ -38,7 +38,7 @@ const SHAPE_KEYWORDS = new Set([
 
 const DIRECTIVE_KEYS = new Set([
   'theme', 'direction', 'spacing', 'font', 'routing', 'corner-radius',
-  'connections',
+  'connections', 'line-jumps', 'layout',
 ]);
 
 /**

@@ -9,6 +9,20 @@ import * as dagre from '@dagrejs/dagre';
 const { Graph } = dagre;
 import type { FlowDocument, FlowNode, FlowLane, Direction } from '../parser/ast.js';
 import { getDirection, getDirective } from '../parser/ast.js';
+import { gridLayout, shouldUseGridLayout, type GridLayoutMeta } from './grid-layout.js';
+
+/**
+ * Last grid layout metadata from the most recent call to layoutDocument
+ * for which grid mode was active. The router consults this to enable
+ * channel routing for skip edges. Stored as a doc-keyed weak map so
+ * concurrent renders don't trample each other.
+ */
+const gridMetaForDoc: WeakMap<FlowDocument, GridLayoutMeta> = new WeakMap();
+
+/** Public accessor — used by the router. */
+export function getGridMeta(doc: FlowDocument): GridLayoutMeta | undefined {
+  return gridMetaForDoc.get(doc);
+}
 
 /** Default node dimensions by shape type */
 const SHAPE_SIZES: Record<string, { width: number; height: number }> = {
@@ -39,6 +53,16 @@ function estimateTextWidth(text: string, fontSize: number = 13): number {
  * Run dagre layout on the document, assigning positions to all nodes.
  */
 export function layoutDocument(doc: FlowDocument): void {
+  // Structured grid layout is the default for plain TB flows. It does
+  // its own footprint sizing and placement; dagre is bypassed.
+  if (shouldUseGridLayout(doc)) {
+    const meta = gridLayout(doc);
+    gridMetaForDoc.set(doc, meta);
+    return;
+  }
+  // Otherwise, fall back to dagre.
+  gridMetaForDoc.delete(doc);
+
   const direction = getDirection(doc);
   const spacing = parseInt(getDirective(doc, 'spacing', '60'), 10);
 

@@ -106,6 +106,7 @@ author: Your Name
 @line-jumps on        // Visio-style hops at edge crossings: on (default), off
 @corner-radius 8      // Radius of orthogonal-edge corners
 @spacing 60           // Dagre node spacing
+@layout grid          // Layout engine: grid (default for TB) or dagre
 ```
 
 ### Shapes
@@ -232,6 +233,51 @@ Deploy Fix -> #end Resolved
 ```
 
 Each lane gets a colored background with a rotated header label on the left. Cardinal port routing automatically selects N/S/E/W anchor points and spreads multiple connections along node edges to avoid overlap.
+
+### Layout — Structured Grid (TB default)
+
+Top-down (`@direction TB`) flowcharts use a **structured grid** layout
+by default. The methodology is the "paper-cutout" / infinite-grid
+approach:
+
+1. **Footprint first.** Every node's text is wrapped to a fixed default
+   width (200px), and the node's height grows to fit the wrapped lines
+   *before* placement begins. Nodes never resize after they're cut out.
+2. **Main column + side columns.** The main flow lives in a center
+   column. When a `#decision` has multiple outgoing branches, the
+   "natural" continuation (`yes` / unconditional / first-declared)
+   stays in the source's column; alternate branches (`no`, custom
+   labels) get their own side column to the East or West.
+3. **Reserved channels.** Between every pair of adjacent columns sits a
+   routing channel. Outer channels run beyond the leftmost and rightmost
+   columns. Long-skip edges that would otherwise pierce a downstream
+   node are routed through these channels rather than threaded through
+   shapes.
+4. **Convergence.** When a side branch re-references an existing node,
+   the router uses an outer-channel skip: exit the source's side, drop
+   (or rise) past every bypassed row, then re-enter the target from the
+   side or top.
+
+Override or disable explicitly:
+
+```
+@layout grid     // force grid layout (the default for TB)
+@layout dagre    // fall back to the dagre-powered layout
+```
+
+Grid layout is automatically bypassed when `#lane` swimlanes or
+`#group` containers are present, or when the direction is not TB —
+those paths use dagre.
+
+**Limitations (current pass):**
+- Two-level branch nesting at most. A decision deep inside a side branch
+  places sub-branches one column further out but doesn't reflow the
+  parent grid.
+- Multi-way (>3) decisions get one E and one W column; surplus branches
+  stack onto W.
+- This is a flow-aware *node placer*, not a constraint solver.
+  Pathologically dense flows may still produce overlap; the existing
+  Visio-style line-jumps post-pass is the final fallback.
 
 ### Edge Routing
 
@@ -467,6 +513,7 @@ svg.querySelectorAll('.fs-node').forEach(g => {
 - [x] Explicit retry / dashed edge syntax (`~>`)
 - [x] Relative-position-aware port scoring (clean L-shapes for diagonal source→decision routes)
 - [x] Visio-style line jumps for unavoidable orthogonal crossings (`@line-jumps off` to disable)
+- [x] Structured grid layout for TB (paper-cutout footprints, side-column branch placement, outer-channel skip routing)
 - [ ] Per-edge `jump` override / theme-level hop styling (radius, shape, color)
 - [ ] `#io` parallelogram custom ports (currently falls back to rect)
 - [ ] `opentype.js` text measurement (replacing character-width heuristic)

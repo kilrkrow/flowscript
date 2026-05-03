@@ -13,6 +13,8 @@
 import type { FlowDocument, FlowNode, FlowEdge, RoutingStyle } from '../parser/ast.js';
 import { getRouting, getDirective } from '../parser/ast.js';
 import { getPortForNodeShape, type CardinalDir as ShapeDir } from './shape-ports.js';
+import { getGridMeta } from './dagre-layout.js';
+import type { GridLayoutMeta } from './grid-layout.js';
 
 export interface RouteResult {
   /** SVG path data string (M, L, Q, C commands) */
@@ -95,6 +97,14 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
     }
   }
 
+  // Grid-aware routing: when grid layout is active, skip edges (those
+  // that would otherwise pierce a column of nodes) get routed via an
+  // outer channel — exit a side, drop down past every bypassed node,
+  // approach the target horizontally. The router computes channel x
+  // positions once per document.
+  const gridMeta = getGridMeta(doc);
+  const gridChannels = gridMeta ? buildGridChannels(doc, gridMeta) : null;
+
   for (let i = 0; i < doc.edges.length; i++) {
     const edge = doc.edges[i];
     const fromNode = doc.nodes.get(edge.from);
@@ -105,9 +115,21 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
     const overrideExit = decisionExitDir.get(edgeId(i, edge));
     let result: RouteResult;
 
+    const isSkip = gridMeta?.skipEdges.has(edgeId(i, edge));
+
     if (edge.from === edge.to) {
       // Self-loop — same on both routing strategies.
       result = routeSelfLoop(edge, fromNode, cornerRadius, overrideExit);
+    } else if (gridMeta && gridChannels && isSkip) {
+      result = routeGridSkip(
+        edge, fromNode, toNode, cornerRadius,
+        gridMeta, gridChannels, doc, i,
+      );
+    } else if (gridMeta && gridChannels) {
+      result = routeGridLocal(
+        edge, fromNode, toNode, cornerRadius,
+        gridMeta, gridChannels, overrideExit,
+      );
     } else if (hasLanes) {
       result = routeCardinal(
         edge, fromNode, toNode, cornerRadius,
@@ -453,9 +475,320 @@ function pickDecisionEntry(
   return dx > 0 ? 'W' : 'E';
 }
 
-// --- Cardinal Port Routing (for swimlanes) ---
+// --- Grid-aware Routing ---
 
 type CardinalDir = 'N' | 'S' | 'E' | 'W';
+
+interface GridChannels {
+  /** x position of the routing channel on the East side of column id. */
+  east: Map<string, number>;
+  /** x position on the West side of column id. */
+  west: Map<string, number>;
+  /** Outer-east x — the channel beyond the rightmost column. */
+  outerEast: number;
+  /** Outer-west x — the channel beyond the leftmost column. */
+  outerWest: number;
+}
+
+/**
+ * Compute routing channel x-positions between/around the grid columns.
+ * Each side-column has a channel on its outer edge; main has channels
+ * on both sides. Far-skip routes use the outer channels so they
+ * never cross a node-bearing column.
+ */
+function buildGridChannels(_doc: FlowDocument, meta: GridLayoutMeta): GridChannels {
+  const cols = [...meta.columns.values()];
+  const east = new Map<string, number>();
+  const west = new Map<string, number>();
+  // Sort columns left-to-right.
+  const sortedByX = [...cols].sort((a, b) => a.x - b.x);
+  for (let i = 0; i < sortedByX.length; i++) {
+    const c = sortedByX[i];
+    const right = sortedByX[i + 1];
+    const left = sortedByX[i - 1];
+    // East channel of c: midpoint between c's right edge and the
+    // next column's left edge. If no next column, sit one half-gap out.
+    if (right) {
+      east.set(c.id, (c.x + c.width / 2 + (right.x - right.width / 2)) / 2);
+    } else {
+      east.set(c.id, c.x + c.width / 2 + 48);
+    }
+    // West channel of c: midpoint between c's left edge and the
+    // previous column's right edge.
+    if (left) {
+      west.set(c.id, (c.x - c.width / 2 + (left.x + left.width / 2)) / 2);
+    } else {
+      west.set(c.id, c.x - c.width / 2 - 48);
+    }
+  }
+  // Outer channels: one half-channel beyond the outermost columns.
+  const leftmost = sortedByX[0];
+  const rightmost = sortedByX[sortedByX.length - 1];
+  const outerWest = leftmost.x - leftmost.width / 2 - 48;
+  const outerEast = rightmost.x + rightmost.width / 2 + 48;
+  return { east, west, outerEast, outerWest };
+}
+
+/**
+ * Route an edge that lives entirely "near" the grid — same column or
+ * adjacent column. Picks N/S for same-column, E/W for cross-column.
+ */
+function routeGridLocal(
+  edge: FlowEdge,
+  from: FlowNode, to: FlowNode,
+  cornerRadius: number,
+  meta: GridLayoutMeta,
+  _channels: GridChannels,
+  overrideExit?: CardinalDir,
+): RouteResult {
+  const fromCol = meta.nodeColumn.get(edge.from) ?? 'main';
+  const toCol = meta.nodeColumn.get(edge.to) ?? 'main';
+  const fromRow = meta.nodeRow.get(edge.from) ?? 0;
+  const toRow = meta.nodeRow.get(edge.to) ?? 0;
+
+  let exitDir: CardinalDir;
+  let entryDir: CardinalDir;
+
+  if (overrideExit && from.shape === 'decision') {
+    exitDir = overrideExit;
+    // Match entry to whichever side opposes exit, or top if going down.
+    if (overrideExit === 'S' || overrideExit === 'N') {
+      entryDir = toRow > fromRow ? 'N' : 'S';
+    } else {
+      entryDir = toRow > fromRow ? 'N' : (overrideExit === 'E' ? 'W' : 'E');
+    }
+  } else if (fromCol === toCol) {
+    exitDir = toRow > fromRow ? 'S' : 'N';
+    entryDir = toRow > fromRow ? 'N' : 'S';
+  } else {
+    const fromColInfo = meta.columns.get(fromCol)!;
+    const toColInfo = meta.columns.get(toCol)!;
+    const dx = toColInfo.x - fromColInfo.x;
+    if (from.shape === 'decision') {
+      exitDir = dx > 0 ? 'E' : 'W';
+      entryDir = toRow > fromRow ? 'N' : 'S';
+    } else {
+      // Process node moving sideways: exit S, enter the side closer to source.
+      exitDir = 'S';
+      entryDir = dx > 0 ? 'W' : 'E';
+    }
+  }
+
+  const fromPorts = getNodePorts(from);
+  const toPorts = getNodePorts(to);
+  const exit = portForDir(fromPorts, exitDir);
+  const entry = portForDir(toPorts, entryDir);
+
+  const waypoints = buildOrthogonalWaypoints(exit, entry, exitDir, entryDir);
+  const pathData = waypointsToRoundedPath(waypoints, cornerRadius);
+  const labelPos = getPathMidpoint(waypoints);
+  return {
+    pathData,
+    labelPosition: labelPos,
+    waypoints: waypoints.map(p => ({ x: p.x, y: p.y })),
+    yieldOnCross: edge.retry === true,
+  };
+}
+
+/**
+ * Route a "skip" edge — one that bypasses one or more rows of nodes
+ * in its source column, or that exits a side column to re-enter the
+ * main column far below. Uses an outer channel so the segment never
+ * threads through any node's bounding box.
+ *
+ * Path shape: exit on the side that points toward the channel, run
+ * horizontally to the channel, drop vertically past every bypassed
+ * row, then jog horizontally into the target's side port.
+ */
+function routeGridSkip(
+  edge: FlowEdge,
+  from: FlowNode, to: FlowNode,
+  cornerRadius: number,
+  meta: GridLayoutMeta,
+  channels: GridChannels,
+  _doc: FlowDocument,
+  edgeIndex: number,
+): RouteResult {
+  const fromCol = meta.nodeColumn.get(edge.from) ?? 'main';
+  const toCol = meta.nodeColumn.get(edge.to) ?? 'main';
+  const fromColInfo = meta.columns.get(fromCol)!;
+  const toColInfo = meta.columns.get(toCol)!;
+
+  // Choose channel side. Prefer the side furthest from any node-bearing
+  // column between source and target. If the source is already in a
+  // side column, exit out away from main; otherwise pick the side
+  // toward which the target lies (or the suggested exit direction
+  // from a multi-branch decision pre-pass).
+  const decisionExit = from.shape === 'decision'
+    ? edge.condition === 'no' || edge.condition === 'false' ? 'E' : null
+    : null;
+
+  // Determine the channel x and exit/entry sides.
+  //
+  // Routing strategy:
+  //   - If source is in a side column and target is on main: use the
+  //     channel between them (on the *inner* side of the source column,
+  //     toward main). This keeps the segment from running across other
+  //     side columns.
+  //   - If source is on main and target is on a side column: use the
+  //     channel between main and that side column.
+  //   - If both are on main: use the outer channel on the side toward
+  //     which the route should bend (decision condition or default E).
+  //   - If source and target are on different side columns of opposite
+  //     side: exit toward main, then run in the channel between.
+  let exitDir: CardinalDir;
+  let channelX: number;
+
+  const fromSide = fromColInfo.side;
+  const toSide = toColInfo.side;
+
+  if (fromSide !== 0 && toSide === 0) {
+    // Side column → main. Exit toward main.
+    exitDir = fromSide > 0 ? 'W' : 'E';
+    // Channel sits between source's outer edge of main and source col.
+    if (fromSide > 0) {
+      // Source is East of main; channel just East of main.
+      channelX = (channels.east.get('main') ?? channels.outerEast);
+    } else {
+      channelX = (channels.west.get('main') ?? channels.outerWest);
+    }
+  } else if (fromSide === 0 && toSide !== 0) {
+    // Main → side column. Exit toward target side.
+    exitDir = toSide > 0 ? 'E' : 'W';
+    if (toSide > 0) {
+      channelX = (channels.east.get('main') ?? channels.outerEast);
+    } else {
+      channelX = (channels.west.get('main') ?? channels.outerWest);
+    }
+  } else if (fromSide === 0 && toSide === 0) {
+    // Main → main. Use outer channel; respect decision-condition hint.
+    if (decisionExit === 'E') {
+      exitDir = 'E';
+      channelX = channels.outerEast;
+    } else {
+      exitDir = 'E';
+      channelX = channels.outerEast;
+    }
+  } else {
+    // Both side columns. Run via outer channel on the source's side.
+    exitDir = fromSide > 0 ? 'E' : 'W';
+    channelX = fromSide > 0 ? channels.outerEast : channels.outerWest;
+  }
+
+  // Per-edge spreading along the channel — different skip edges with
+  // overlapping vertical ranges shouldn't share an x. We use the
+  // edgeIndex to nudge the channel x apart by a small step.
+  const SPREAD = 14;
+  const spreadIdx = edgeIndex % 4;
+  channelX = channelX + (exitDir === 'E' ? 1 : -1) * spreadIdx * SPREAD;
+
+  // Pick entry side on target.
+  // - If channel is between two columns, enter on whichever side of the
+  //   target faces the channel.
+  // - If route comes in from above (skip going downward to a node well
+  //   below), prefer top entry on the target.
+  const fromRow = meta.nodeRow.get(edge.from) ?? 0;
+  const toRow = meta.nodeRow.get(edge.to) ?? 0;
+  let entryDir: CardinalDir;
+  if (channelX > (to.x ?? 0)) {
+    entryDir = 'E';
+  } else if (channelX < (to.x ?? 0)) {
+    entryDir = 'W';
+  } else {
+    entryDir = exitDir === 'E' ? 'W' : 'E';
+  }
+  // Top-entry preference: target is significantly below the source AND
+  // the channel is well clear of the target. Helps the No → Monitor
+  // pattern in the incident-response fixture look natural.
+  const usingTopEntry =
+    toRow > fromRow + 1 &&
+    Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
+
+  // For the source side: prefer exiting on S (or N if going up) so the
+  // path enters the row gap before bending horizontally. This avoids
+  // the horizontal segment running across other nodes that share the
+  // source's row. We retain side-exit only if there's no other node in
+  // the source row between source and channel.
+  const goingDown = (to.y ?? 0) > (from.y ?? 0);
+  const useVerticalExit = anyNodeInRowBetween(
+    meta, edge.from, fromRow, exitDir,
+  );
+  let exitFinalDir: CardinalDir = exitDir;
+  if (useVerticalExit) {
+    exitFinalDir = goingDown ? 'S' : 'N';
+  }
+
+  const fromPorts = getNodePorts(from);
+  const toPorts = getNodePorts(to);
+  const exit = portForDir(fromPorts, exitFinalDir);
+  const entry = usingTopEntry
+    ? portForDir(toPorts, 'N')
+    : portForDir(toPorts, entryDir);
+
+  // Build waypoints. When exiting on a side, jog out to channel at the
+  // source row first. When exiting top/bottom, drop into a row-gap y
+  // before going horizontal — this is the safe path that doesn't cross
+  // other nodes sharing the source's row.
+  const waypoints: Port[] = [exit];
+  if (exitFinalDir === 'E' || exitFinalDir === 'W') {
+    waypoints.push({ x: channelX, y: exit.y });
+  } else {
+    // Vertical exit: step into the gap below the source row, then go
+    // horizontal toward the channel. Use the row gap (half ROW_GAP / 2
+    // below the source's bottom edge).
+    const gapY = goingDown
+      ? exit.y + 30
+      : exit.y - 30;
+    waypoints.push({ x: exit.x, y: gapY });
+    waypoints.push({ x: channelX, y: gapY });
+  }
+  if (usingTopEntry) {
+    waypoints.push({ x: channelX, y: entry.y });
+    waypoints.push({ x: entry.x, y: entry.y });
+    waypoints.push(entry);
+  } else {
+    waypoints.push({ x: channelX, y: entry.y });
+    waypoints.push(entry);
+  }
+
+  const pathData = waypointsToRoundedPath(waypoints, cornerRadius);
+  const labelPosition = getPathMidpoint(waypoints);
+
+  return {
+    pathData,
+    labelPosition,
+    waypoints: waypoints.map(p => ({ x: p.x, y: p.y })),
+    yieldOnCross: edge.retry === true,
+  };
+}
+
+/**
+ * Are there any other nodes in `row` lying between the source column
+ * and the channel direction? If so, a horizontal segment at this row
+ * would pierce them.
+ */
+function anyNodeInRowBetween(
+  meta: GridLayoutMeta,
+  sourceId: string,
+  row: number,
+  direction: CardinalDir,
+): boolean {
+  const r = meta.rows[row];
+  if (!r) return false;
+  const sourceCol = meta.nodeColumn.get(sourceId);
+  const sourceColInfo = sourceCol ? meta.columns.get(sourceCol) : null;
+  if (!sourceColInfo) return false;
+  for (const [colId, _node] of r.nodes) {
+    if (colId === sourceCol) continue;
+    const col = meta.columns.get(colId);
+    if (!col) continue;
+    if (direction === 'E' && col.x > sourceColInfo.x) return true;
+    if (direction === 'W' && col.x < sourceColInfo.x) return true;
+  }
+  return false;
+}
+
+// --- Cardinal Port Routing (for swimlanes) ---
 
 /**
  * Stable edge key that includes the edge's document index, so duplicate
