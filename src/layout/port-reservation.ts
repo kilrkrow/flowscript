@@ -128,6 +128,22 @@ export function reservePorts(
   // (the primary path is written first), so the two-pass order matches
   // intuition. The router still falls back to geometry as the tie
   // breaker via the per-edge preference lists.
+  // Predicted-entry pre-pass. Each edge's *natural* entry side
+  // (its pin, or the head of its entryPrefs list) is stamped onto the
+  // target node's entry tally before any exit gets picked. This lets
+  // the exit pass's "no opposite-direction reuse" rule see incoming
+  // edges that haven't been formally reserved yet — without it, an
+  // outbound edge can land on a side that an inbound edge declared
+  // later in document order is about to claim.
+  const predictedEntry = new Map<string, AnyDir>();
+  for (const p of prefs) {
+    const dir: AnyDir = p.entryPin
+      ? (p.entryPin as AnyDir)
+      : (p.entryPrefs[0] ?? 'N');
+    predictedEntry.set(p.edgeKey, dir);
+    bumpUsed(used, p.toNode.id, dir, 'entry');
+  }
+
   const exitChoice = new Map<string, { dir: AnyDir; semi: boolean }>();
   for (const p of prefs) {
     const exit = p.exitPin
@@ -136,6 +152,15 @@ export function reservePorts(
     exitChoice.set(p.edgeKey, exit);
     bumpUsed(used, p.fromNode.id, exit.dir, 'exit');
   }
+
+  // Drop the predicted-entry stamps before the real entry pass — we
+  // want the entry pass to compute occupancy fresh, otherwise every
+  // entry would see itself already counted.
+  for (const p of prefs) {
+    const dir = predictedEntry.get(p.edgeKey)!;
+    decUsed(used, p.toNode.id, dir, 'entry');
+  }
+
   for (const p of prefs) {
     const exit = exitChoice.get(p.edgeKey)!;
     const entry = p.entryPin
@@ -284,6 +309,18 @@ function bumpUsed(
 ): void {
   const key = bucketKey(nodeId, dir, role);
   used.set(key, (used.get(key) ?? 0) + 1);
+}
+
+function decUsed(
+  used: Map<string, number>,
+  nodeId: string,
+  dir: AnyDir,
+  role: Role,
+): void {
+  const key = bucketKey(nodeId, dir, role);
+  const next = (used.get(key) ?? 0) - 1;
+  if (next <= 0) used.delete(key);
+  else used.set(key, next);
 }
 
 function bucketKey(nodeId: string, dir: AnyDir, role: Role): string {
