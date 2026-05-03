@@ -19,6 +19,12 @@ export interface Theme {
     strokeWidth: number;
     arrowSize: number;
     labelFont: { family: string; size: number; color: string; weight: number };
+    /**
+     * Optional per-semantic stroke overrides. Keys match the semantic
+     * class emitted by the renderer (`fs-edge-yes`, `fs-edge-no`,
+     * `fs-edge-retry`). Falls back to `stroke` when a key is absent.
+     */
+    semanticStrokes?: Record<string, string>;
   };
   shapes: Record<string, { fill: string; stroke: string; textColor?: string }>;
   group: {
@@ -54,6 +60,11 @@ export const cleanTheme: Theme = {
     strokeWidth: 1.5,
     arrowSize: 10,
     labelFont: { family: "'Inter', system-ui, sans-serif", size: 11, color: '#6a6a72', weight: 500 },
+    semanticStrokes: {
+      'fs-edge-yes':   '#2e7d32',
+      'fs-edge-no':    '#c62828',
+      'fs-edge-retry': '#7e57c2',
+    },
   },
   shapes: {
     start:    { fill: '#d4edda', stroke: '#4caf50', textColor: '#2e7d32' },

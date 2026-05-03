@@ -233,16 +233,31 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
     // (`try again`, `resend`). The `retry` flag is set in the parser.
     const isDashed = edge.retry === true
       || edge.label === 'try again' || edge.label === 'resend';
+
+    // Semantic class hint based on the condition / retry flag. Lets
+    // theme overrides target yes/no/retry edges with CSS.
+    const cond = (edge.condition ?? '').toLowerCase();
+    const semanticClass =
+      isDashed                                 ? 'fs-edge-retry'
+      : cond === 'yes' || cond === 'true'      ? 'fs-edge-yes'
+      : cond === 'no'  || cond === 'false'     ? 'fs-edge-no'
+      : '';
+
+    // Theme color override for the path stroke when a semantic class
+    // applies and the user hasn't set an explicit edge style.
+    const semanticStroke =
+      edge.style?.stroke ?? theme.edge.semanticStrokes?.[semanticClass] ?? theme.edge.stroke;
+
     const edgeGroup: (SvgElement | string)[] = [];
 
     // Path
     edgeGroup.push(el('path', {
       d: route.pathData,
       fill: 'none',
-      stroke: edge.style?.stroke ?? theme.edge.stroke,
+      stroke: semanticStroke,
       'stroke-width': theme.edge.strokeWidth,
       'marker-end': 'url(#fs-arrow)',
-      class: isDashed ? 'fs-edge-path fs-edge-retry' : 'fs-edge-path',
+      class: ['fs-edge-path', semanticClass].filter(Boolean).join(' '),
       ...(isDashed ? { 'stroke-dasharray': '6,3' } : {}),
     }));
 

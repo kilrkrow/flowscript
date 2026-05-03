@@ -105,6 +105,15 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
   const gridMeta = getGridMeta(doc);
   const gridChannels = gridMeta ? buildGridChannels(doc, gridMeta) : null;
 
+  // Grid-aware port pressure: pre-pass counts how many edges intend to
+  // attach to each (nodeId, side, role) so we can spread them along the
+  // edge and, for the most contested cases, redirect to a free side.
+  // Pressure is only collected when grid layout is active — swimlane
+  // layout has its own portUsage/portIndex maps above.
+  const gridPortPressure = gridMeta && gridChannels
+    ? buildGridPortPressure(doc, gridMeta, gridChannels, decisionExitDir)
+    : null;
+
   for (let i = 0; i < doc.edges.length; i++) {
     const edge = doc.edges[i];
     const fromNode = doc.nodes.get(edge.from);
@@ -124,11 +133,13 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
       result = routeGridSkip(
         edge, fromNode, toNode, cornerRadius,
         gridMeta, gridChannels, doc, i,
+        gridPortPressure,
       );
     } else if (gridMeta && gridChannels) {
       result = routeGridLocal(
         edge, fromNode, toNode, cornerRadius,
         gridMeta, gridChannels, overrideExit,
+        gridPortPressure, i, edge,
       );
     } else if (hasLanes) {
       result = routeCardinal(
@@ -540,46 +551,41 @@ function routeGridLocal(
   meta: GridLayoutMeta,
   _channels: GridChannels,
   overrideExit?: CardinalDir,
+  pressure?: GridPortPressure | null,
+  edgeIdx?: number,
+  _edgeRef?: FlowEdge,
 ): RouteResult {
-  const fromCol = meta.nodeColumn.get(edge.from) ?? 'main';
-  const toCol = meta.nodeColumn.get(edge.to) ?? 'main';
-  const fromRow = meta.nodeRow.get(edge.from) ?? 0;
-  const toRow = meta.nodeRow.get(edge.to) ?? 0;
+  const dirs = predictLocalDirs(edge, from, to, meta, overrideExit);
+  let exitDir = dirs.exitDir;
+  let entryDir = dirs.entryDir;
 
-  let exitDir: CardinalDir;
-  let entryDir: CardinalDir;
-
-  if (overrideExit && from.shape === 'decision') {
-    exitDir = overrideExit;
-    // Match entry to whichever side opposes exit, or top if going down.
-    if (overrideExit === 'S' || overrideExit === 'N') {
-      entryDir = toRow > fromRow ? 'N' : 'S';
-    } else {
-      entryDir = toRow > fromRow ? 'N' : (overrideExit === 'E' ? 'W' : 'E');
-    }
-  } else if (fromCol === toCol) {
-    exitDir = toRow > fromRow ? 'S' : 'N';
-    entryDir = toRow > fromRow ? 'N' : 'S';
-  } else {
-    const fromColInfo = meta.columns.get(fromCol)!;
-    const toColInfo = meta.columns.get(toCol)!;
-    const dx = toColInfo.x - fromColInfo.x;
-    if (from.shape === 'decision') {
-      exitDir = dx > 0 ? 'E' : 'W';
-      entryDir = toRow > fromRow ? 'N' : 'S';
-    } else {
-      // Process node moving sideways: exit S, enter the side closer to source.
-      exitDir = 'S';
-      entryDir = dx > 0 ? 'W' : 'E';
-    }
+  // Pressure-based alternate-side switch: when the chosen entry port is
+  // crowded but a perpendicular alternate is free, prefer the alternate.
+  // We only do this for non-decision targets — decisions still want their
+  // tip ports.
+  if (pressure && edgeIdx !== undefined) {
+    const swap = maybeSwapEntrySide(
+      edge, from, to, meta, exitDir, entryDir, pressure,
+    );
+    entryDir = swap;
   }
 
   const fromPorts = getNodePorts(from);
   const toPorts = getNodePorts(to);
   const exit = portForDir(fromPorts, exitDir);
-  const entry = portForDir(toPorts, entryDir);
+  let entry = portForDir(toPorts, entryDir);
 
-  const waypoints = buildOrthogonalWaypoints(exit, entry, exitDir, entryDir);
+  // Spread along the entry side when multiple edges share this port.
+  if (pressure && edgeIdx !== undefined && to.shape !== 'decision') {
+    entry = applyPortSpread(to, entryDir, edge, edgeIdx, 'entry', pressure);
+  }
+  // Spread along the exit side too (process nodes only; decisions keep tips).
+  let exitFinal = exit;
+  if (pressure && edgeIdx !== undefined && from.shape !== 'decision') {
+    exitFinal = applyPortSpread(from, exitDir, edge, edgeIdx, 'exit', pressure);
+  }
+
+  const waypoints = buildOrthogonalWaypoints(exitFinal, entry, exitDir, entryDir);
   const pathData = waypointsToRoundedPath(waypoints, cornerRadius);
   const labelPos = getPathMidpoint(waypoints);
   return {
@@ -608,6 +614,7 @@ function routeGridSkip(
   channels: GridChannels,
   _doc: FlowDocument,
   edgeIndex: number,
+  pressure?: GridPortPressure | null,
 ): RouteResult {
   const fromCol = meta.nodeColumn.get(edge.from) ?? 'main';
   const toCol = meta.nodeColumn.get(edge.to) ?? 'main';
@@ -720,10 +727,21 @@ function routeGridSkip(
 
   const fromPorts = getNodePorts(from);
   const toPorts = getNodePorts(to);
-  const exit = portForDir(fromPorts, exitFinalDir);
-  const entry = usingTopEntry
+  let exit = portForDir(fromPorts, exitFinalDir);
+  const finalEntryDir: CardinalDir = usingTopEntry ? 'N' : entryDir;
+  let entry = usingTopEntry
     ? portForDir(toPorts, 'N')
     : portForDir(toPorts, entryDir);
+
+  // Apply port-pressure spread: if multiple skip edges land on the same
+  // (target, side) port, fan them out along that side so they don't all
+  // pile onto a single point.
+  if (pressure && to.shape !== 'decision') {
+    entry = applyPortSpread(to, finalEntryDir, edge, edgeIndex, 'entry', pressure);
+  }
+  if (pressure && from.shape !== 'decision') {
+    exit = applyPortSpread(from, exitFinalDir, edge, edgeIndex, 'exit', pressure);
+  }
 
   // Build waypoints. When exiting on a side, jog out to channel at the
   // source row first. When exiting top/bottom, drop into a row-gap y
@@ -760,6 +778,252 @@ function routeGridSkip(
     waypoints: waypoints.map(p => ({ x: p.x, y: p.y })),
     yieldOnCross: edge.retry === true,
   };
+}
+
+// ── Grid port pressure ────────────────────────────────────────────────
+
+interface GridPortPressure {
+  /** "nodeId:dir:role" -> total edges that intend to attach there */
+  count: Map<string, number>;
+  /** "edgeKey:role" -> 0-based index of this edge among co-attached siblings */
+  index: Map<string, number>;
+  /** "edgeKey:role" -> the predicted direction at that role */
+  dir: Map<string, CardinalDir>;
+}
+
+/**
+ * Pre-pass: predict each grid edge's exit/entry direction (without
+ * actually routing it) and tally per-(node, side, role) occupancy.
+ * The route functions use this to:
+ *   - spread multiple edges along the same side rather than stacking,
+ *   - optionally redirect to a free perpendicular side when the natural
+ *     side is heavily contested AND the alternate is unused.
+ *
+ * The prediction mirrors `routeGridLocal` / `routeGridSkip`'s direction
+ * logic; if those routers diverge later they won't crash — the spread
+ * just won't be tight on the actual chosen side.
+ */
+function buildGridPortPressure(
+  doc: FlowDocument,
+  meta: GridLayoutMeta,
+  channels: GridChannels,
+  decisionExitDir: Map<string, CardinalDir>,
+): GridPortPressure {
+  const count = new Map<string, number>();
+  const index = new Map<string, number>();
+  const dir = new Map<string, CardinalDir>();
+
+  // First pass: predict directions.
+  const cursor = new Map<string, number>();
+  for (let i = 0; i < doc.edges.length; i++) {
+    const edge = doc.edges[i];
+    if (edge.from === edge.to) continue;
+    const fromNode = doc.nodes.get(edge.from);
+    const toNode = doc.nodes.get(edge.to);
+    if (!fromNode || !toNode) continue;
+
+    const overrideExit = decisionExitDir.get(edgeId(i, edge));
+    const isSkip = meta.skipEdges.has(edgeId(i, edge));
+    const dirs = isSkip
+      ? predictSkipDirs(edge, fromNode, toNode, meta, channels)
+      : predictLocalDirs(edge, fromNode, toNode, meta, overrideExit);
+
+    const ek = edgeId(i, edge);
+    dir.set(`${ek}:exit`, dirs.exitDir);
+    dir.set(`${ek}:entry`, dirs.entryDir);
+
+    const exitKey = `${edge.from}:${dirs.exitDir}:exit`;
+    const entryKey = `${edge.to}:${dirs.entryDir}:entry`;
+    count.set(exitKey, (count.get(exitKey) ?? 0) + 1);
+    count.set(entryKey, (count.get(entryKey) ?? 0) + 1);
+  }
+
+  // Second pass: assign per-edge index along its (node, dir, role) bucket.
+  for (let i = 0; i < doc.edges.length; i++) {
+    const edge = doc.edges[i];
+    if (edge.from === edge.to) continue;
+    const ek = edgeId(i, edge);
+    const exitDir = dir.get(`${ek}:exit`);
+    const entryDir = dir.get(`${ek}:entry`);
+    if (!exitDir || !entryDir) continue;
+    const exitKey = `${edge.from}:${exitDir}:exit`;
+    const entryKey = `${edge.to}:${entryDir}:entry`;
+    const exitI = cursor.get(exitKey) ?? 0;
+    const entryI = cursor.get(entryKey) ?? 0;
+    index.set(`${ek}:exit`, exitI);
+    index.set(`${ek}:entry`, entryI);
+    cursor.set(exitKey, exitI + 1);
+    cursor.set(entryKey, entryI + 1);
+  }
+
+  return { count, index, dir };
+}
+
+/** Predict the exit/entry direction for a non-skip grid edge. */
+function predictLocalDirs(
+  edge: FlowEdge,
+  from: FlowNode, to: FlowNode,
+  meta: GridLayoutMeta,
+  overrideExit?: CardinalDir,
+): { exitDir: CardinalDir; entryDir: CardinalDir } {
+  const fromCol = meta.nodeColumn.get(edge.from) ?? 'main';
+  const toCol = meta.nodeColumn.get(edge.to) ?? 'main';
+  const fromRow = meta.nodeRow.get(edge.from) ?? 0;
+  const toRow = meta.nodeRow.get(edge.to) ?? 0;
+
+  let exitDir: CardinalDir;
+  let entryDir: CardinalDir;
+
+  if (overrideExit && from.shape === 'decision') {
+    exitDir = overrideExit;
+    if (overrideExit === 'S' || overrideExit === 'N') {
+      entryDir = toRow > fromRow ? 'N' : 'S';
+    } else {
+      entryDir = toRow > fromRow ? 'N' : (overrideExit === 'E' ? 'W' : 'E');
+    }
+  } else if (fromCol === toCol) {
+    exitDir = toRow > fromRow ? 'S' : 'N';
+    entryDir = toRow > fromRow ? 'N' : 'S';
+  } else {
+    const fromColInfo = meta.columns.get(fromCol)!;
+    const toColInfo = meta.columns.get(toCol)!;
+    const dx = toColInfo.x - fromColInfo.x;
+    if (from.shape === 'decision') {
+      exitDir = dx > 0 ? 'E' : 'W';
+      entryDir = toRow > fromRow ? 'N' : 'S';
+    } else {
+      exitDir = 'S';
+      entryDir = dx > 0 ? 'W' : 'E';
+    }
+  }
+  return { exitDir, entryDir };
+}
+
+/** Predict the exit/entry direction for a grid skip edge. */
+function predictSkipDirs(
+  edge: FlowEdge,
+  from: FlowNode, to: FlowNode,
+  meta: GridLayoutMeta,
+  channels: GridChannels,
+): { exitDir: CardinalDir; entryDir: CardinalDir } {
+  const fromCol = meta.nodeColumn.get(edge.from) ?? 'main';
+  const toCol = meta.nodeColumn.get(edge.to) ?? 'main';
+  const fromColInfo = meta.columns.get(fromCol)!;
+  const toColInfo = meta.columns.get(toCol)!;
+  const fromSide = fromColInfo.side;
+  const toSide = toColInfo.side;
+
+  let exitDir: CardinalDir;
+  let channelX: number;
+
+  if (fromSide !== 0 && toSide === 0) {
+    exitDir = fromSide > 0 ? 'W' : 'E';
+    channelX = fromSide > 0
+      ? (channels.east.get('main') ?? channels.outerEast)
+      : (channels.west.get('main') ?? channels.outerWest);
+  } else if (fromSide === 0 && toSide !== 0) {
+    exitDir = toSide > 0 ? 'E' : 'W';
+    channelX = toSide > 0
+      ? (channels.east.get('main') ?? channels.outerEast)
+      : (channels.west.get('main') ?? channels.outerWest);
+  } else if (fromSide === 0 && toSide === 0) {
+    exitDir = 'E';
+    channelX = channels.outerEast;
+  } else {
+    exitDir = fromSide > 0 ? 'E' : 'W';
+    channelX = fromSide > 0 ? channels.outerEast : channels.outerWest;
+  }
+
+  // Match routeGridSkip: the actual exit may flip to S/N when a
+  // horizontal cross-row sweep would pierce another node in the row.
+  const fromRow = meta.nodeRow.get(edge.from) ?? 0;
+  const toRow = meta.nodeRow.get(edge.to) ?? 0;
+  const goingDown = (to.y ?? 0) > (from.y ?? 0);
+  if (anyNodeInRowBetween(meta, edge.from, fromRow, exitDir)) {
+    exitDir = goingDown ? 'S' : 'N';
+  }
+
+  let entryDir: CardinalDir;
+  if (channelX > (to.x ?? 0)) entryDir = 'E';
+  else if (channelX < (to.x ?? 0)) entryDir = 'W';
+  else entryDir = exitDir === 'E' ? 'W' : 'E';
+
+  // Mirror the top-entry preference in routeGridSkip.
+  const usingTopEntry =
+    toRow > fromRow + 1 &&
+    Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
+  if (usingTopEntry) entryDir = 'N';
+
+  return { exitDir, entryDir };
+}
+
+/**
+ * Return a port on `node` for `dir` with a centerline offset chosen by
+ * this edge's index in the (node, dir, role) bucket. Spreads ports over
+ * 60% of the edge length (matching the swimlane router's convention).
+ */
+function applyPortSpread(
+  node: FlowNode,
+  dir: CardinalDir,
+  edge: FlowEdge,
+  edgeIdx: number,
+  role: 'exit' | 'entry',
+  pressure: GridPortPressure,
+): Port {
+  const ek = edgeId(edgeIdx, edge);
+  const total = pressure.count.get(`${node.id}:${dir}:${role}`) ?? 1;
+  const idx = pressure.index.get(`${ek}:${role}`) ?? 0;
+  if (total <= 1) return getPortForNodeShape(node, dir);
+
+  const spreadH = (node.width ?? 180) * 0.6;
+  const spreadV = (node.height ?? 44) * 0.6;
+  const offsetH = (idx / (total - 1) - 0.5) * spreadH;
+  const offsetV = (idx / (total - 1) - 0.5) * spreadV;
+  const offset = (dir === 'N' || dir === 'S') ? offsetH : offsetV;
+  return getPortForNodeShape(node, dir, offset);
+}
+
+/**
+ * If the originally chosen `entryDir` is shared by 3+ edges and a
+ * perpendicular side is unused, redirect to the perpendicular side —
+ * but only when the swap doesn't put the path on the wrong half-plane.
+ *
+ * Stays conservative: skip-edge geometry is fragile. We only swap for
+ * non-skip targets that aren't decisions (decision tips are visually
+ * meaningful). The function returns the (possibly swapped) entryDir.
+ */
+function maybeSwapEntrySide(
+  edge: FlowEdge,
+  _from: FlowNode, to: FlowNode,
+  meta: GridLayoutMeta,
+  _exitDir: CardinalDir,
+  entryDir: CardinalDir,
+  pressure: GridPortPressure,
+): CardinalDir {
+  if (to.shape === 'decision') return entryDir;
+  const total = pressure.count.get(`${edge.to}:${entryDir}:entry`) ?? 0;
+  if (total < 3) return entryDir;
+
+  // Pick a perpendicular alternate that's unused. Preserve the entry's
+  // half-plane (if entryDir is N keep top; if E keep east) — only swap
+  // along the perpendicular axis.
+  const perpendicular: CardinalDir[] =
+    entryDir === 'N' || entryDir === 'S' ? ['E', 'W'] : ['N', 'S'];
+  for (const alt of perpendicular) {
+    const used = pressure.count.get(`${edge.to}:${alt}:entry`) ?? 0;
+    if (used !== 0) continue;
+    // Sanity: the alternate must point roughly toward the source.
+    const fromRow = meta.nodeRow.get(edge.from) ?? 0;
+    const toRow = meta.nodeRow.get(edge.to) ?? 0;
+    if (alt === 'N' && fromRow >= toRow) return alt;
+    if (alt === 'S' && fromRow <= toRow) return alt;
+    // E/W swap: only safe if source column lies on the matching side.
+    const fromCol = meta.columns.get(meta.nodeColumn.get(edge.from) ?? 'main');
+    const toCol = meta.columns.get(meta.nodeColumn.get(edge.to) ?? 'main');
+    if (alt === 'E' && (fromCol?.x ?? 0) > (toCol?.x ?? 0)) return alt;
+    if (alt === 'W' && (fromCol?.x ?? 0) < (toCol?.x ?? 0)) return alt;
+  }
+  return entryDir;
 }
 
 /**
