@@ -105,7 +105,10 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
     const overrideExit = decisionExitDir.get(edgeId(i, edge));
     let result: RouteResult;
 
-    if (hasLanes) {
+    if (edge.from === edge.to) {
+      // Self-loop — same on both routing strategies.
+      result = routeSelfLoop(edge, fromNode, cornerRadius, overrideExit);
+    } else if (hasLanes) {
       result = routeCardinal(
         edge, fromNode, toNode, cornerRadius,
         portUsage, portIndex, i, overrideExit,
@@ -134,6 +137,9 @@ function routeEdge(
   cornerRadius: number,
   overrideExit?: CardinalDir,
 ): RouteResult {
+  if (edge.from === edge.to) {
+    return routeSelfLoop(edge, from, cornerRadius, overrideExit);
+  }
   switch (style) {
     case 'orthogonal':
       return routeOrthogonal(edge, from, to, cornerRadius, overrideExit);
@@ -142,6 +148,93 @@ function routeEdge(
     case 'polyline':
       return routePolyline(from, to);
   }
+}
+
+/**
+ * Build a visible orthogonal self-loop on a single node.
+ *
+ * A self-loop edge has from === to, so the standard port picker collapses
+ * the route into a zero-length path. Instead, we exit the node on a side
+ * (E by default, or the side chosen by the multi-branch decision pre-pass),
+ * step out by a fixed margin, hop up around the top, then re-enter through
+ * the N port. The path always has at least four waypoints, so the renderer
+ * has real geometry to draw and label.
+ *
+ * The margin scales with corner radius so loops on the same node don't
+ * overlap the rounded edge of an adjacent route.
+ */
+function routeSelfLoop(
+  edge: FlowEdge,
+  node: FlowNode,
+  cornerRadius: number,
+  overrideExit?: CardinalDir,
+): RouteResult {
+  const r = Math.max(cornerRadius, 8);
+  const margin = 32 + r;
+
+  const exitDir: CardinalDir =
+    overrideExit ?? (node.shape === 'decision'
+      ? (edge.condition === 'no' || edge.condition === 'false' ? 'E' : 'E')
+      : 'E');
+
+  const ports = getNodePorts(node);
+  const exit = portForDir(ports, exitDir);
+  const entry = ports.top;
+
+  let waypoints: Port[];
+  if (exitDir === 'E') {
+    const x = exit.x + margin;
+    const y = exit.y - margin;
+    waypoints = [
+      exit,
+      { x, y: exit.y },
+      { x, y },
+      { x: entry.x, y },
+      entry,
+    ];
+  } else if (exitDir === 'W') {
+    const x = exit.x - margin;
+    const y = exit.y - margin;
+    waypoints = [
+      exit,
+      { x, y: exit.y },
+      { x, y },
+      { x: entry.x, y },
+      entry,
+    ];
+  } else if (exitDir === 'S') {
+    const y = exit.y + margin;
+    const x = exit.x + margin;
+    waypoints = [
+      exit,
+      { x: exit.x, y },
+      { x, y },
+      { x, y: entry.y - margin },
+      { x: entry.x, y: entry.y - margin },
+      entry,
+    ];
+  } else {
+    // N exit — wrap right side
+    const y = exit.y - margin;
+    const x = exit.x + margin;
+    waypoints = [
+      exit,
+      { x: exit.x, y },
+      { x, y },
+      { x, y: entry.y },
+      entry,
+    ];
+  }
+
+  const pathData = waypointsToRoundedPath(waypoints, cornerRadius);
+  const labelPosition = getPathMidpoint(waypoints);
+
+  return {
+    pathData,
+    labelPosition,
+    waypoints: waypoints.map(p => ({ x: p.x, y: p.y })),
+    yieldOnCross: edge.retry === true,
+  };
 }
 
 // --- Connection port helpers ---

@@ -360,7 +360,15 @@ class Parser {
 
     // Parse decision branches (indented -> yes: / -> no:)
     if (shape === 'decision') {
-      this.parseDecisionBranches(nodeId);
+      const branchCount = this.parseDecisionBranches(nodeId);
+      // When a decision has explicit branches, every successor must be
+      // declared explicitly. Clear the implicit chain so the next sibling
+      // line does not become a phantom unconditional fall-through from
+      // the decision (issue #8). Authors who want a fall-through can
+      // declare it with an explicit `->` arrow.
+      if (branchCount > 0) {
+        this.implicitPrev = null;
+      }
     }
 
     return nodeId;
@@ -542,10 +550,13 @@ class Parser {
    * Parse indented decision branches:
    *   -> yes: Target
    *   -> no: Target
+   *
+   * Returns the number of branches consumed. Callers use this to decide
+   * whether to break the implicit chain (decisions with explicit
+   * branches must not fall through to the next sibling — issue #8).
    */
-  private parseDecisionBranches(decisionId: string): void {
-    // Peek ahead for indented arrows
-    const saved = this.pos;
+  private parseDecisionBranches(decisionId: string): number {
+    let branchCount = 0;
 
     // Skip newline
     while (this.peek().type === 'NEWLINE') this.advance();
@@ -605,6 +616,7 @@ class Parser {
         }
 
         this.addEdge(decisionId, targetId, label, condition, isRetry);
+        branchCount++;
 
         // Skip newlines for next branch
         while (this.peek().type === 'NEWLINE') this.advance();
@@ -614,6 +626,8 @@ class Parser {
         break;
       }
     }
+
+    return branchCount;
   }
 
   // --- Style blocks ---

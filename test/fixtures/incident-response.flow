@@ -1,0 +1,20 @@
+---
+title: Incident Response — escalation and self-loop polling
+---
+
+@theme clean
+@direction TB
+
+#start Start
+  Assess all intel sources
+  #decision Is there an event requiring police?
+    -> yes: Call Police
+    -> no: Monitor until resolved
+  Call Police
+  #decision Have they arrived?
+    -> yes: Monitor until resolved
+    -> no: Have they arrived?
+  Monitor until resolved
+  #decision Resolved?
+    -> yes: #end Done
+    -> no: Monitor until resolved
