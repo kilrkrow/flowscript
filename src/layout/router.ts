@@ -1055,13 +1055,14 @@ function buildGridReservation(
 /**
  * Build a candidate list around the geometry-preferred direction.
  *
- * Order: preferred → its same-axis opposite → near perpendicular →
- * far perpendicular. Keeping the same-axis opposite *second* means a
- * forced rerouting (e.g. when the preferred N is blocked by inbound
- * traffic) still falls onto the vertical axis (S) before crossing the
- * node sideways. The `nearPerpendicular` argument lets the reserver
- * pick the side of the target that faces the source's column — so a
- * blocked S falls to W when the source is west of the target, not E.
+ * Order: preferred → near perpendicular → far perpendicular →
+ * same-axis opposite. When the preferred cardinal is blocked by
+ * existing traffic, swinging perpendicular toward the target produces
+ * a cleaner detour than reversing 180° onto the same axis (which
+ * always means doubling back through the source). The
+ * `nearPerpendicular` argument lets the reserver pick the side of the
+ * target that faces the source's column — so a blocked N falls to W
+ * when the target is west of the source, not E.
  */
 function rankAround(
   preferred: CardinalDir,
@@ -1074,7 +1075,7 @@ function rankAround(
     ? nearPerpendicular
     : perpendiculars[0];
   const far = near === perpendiculars[0] ? perpendiculars[1] : perpendiculars[0];
-  return [preferred, opposite, near, far];
+  return [preferred, near, far, opposite];
 }
 
 function oppositeCardinal(d: CardinalDir): CardinalDir {
@@ -1361,26 +1362,35 @@ function assignDecisionExits(doc: FlowDocument): Map<string, CardinalDir> {
     // with the natural "enter from top" routing into the diamond.
     const preferOrder: CardinalDir[] = ['S', 'E', 'W', 'N'];
 
-    // Pass 1: honor yes/true by pinning to S for forward edges.
-    // Back-edges (target above source) must not pin to S — instead
-    // use the side that faces the target so the path routes correctly.
+    // Pass 1: honor yes/true. The traditional convention is S — the
+    // primary path continues straight down — and that is right when
+    // the target sits directly below in the same column. But pinning
+    // to S unconditionally forces yes loop-backs and cross-column
+    // jumps to leave the bottom tip and immediately U-turn. So we
+    // *score* the cardinals by alignment with (dx, dy) and pick the
+    // best free side. N is excluded from the candidate set because
+    // incoming edges almost always land on N in a TB flow — exiting
+    // N would conflict with a port reservation that hasn't been
+    // computed yet.
     for (const { idx, edge } of branches) {
-      const lc = (edge.condition ?? '').toLowerCase();
-      if (lc === 'yes' || lc === 'true') {
-        const to = doc.nodes.get(edge.to);
-        const dy = (to?.y ?? 0) - (from.y ?? 0);
-        if (dy >= 0) {
-          // Forward edge: standard S (continue straight down).
-          out.set(edgeId(idx, edge), 'S');
-          used.add('S');
-        } else {
-          // Back-edge: exit toward the target column.
-          const dx = (to?.x ?? 0) - (from.x ?? 0);
-          const pick: CardinalDir = dx <= 0 ? 'W' : 'E';
-          out.set(edgeId(idx, edge), pick);
-          used.add(pick);
-        }
-      }
+      if (edge.condition !== 'yes' && edge.condition !== 'true') continue;
+      const to = doc.nodes.get(edge.to);
+      const dx = (to?.x ?? 0) - (from.x ?? 0);
+      const dy = (to?.y ?? 0) - (from.y ?? 0);
+      const score = (d: CardinalDir): number => {
+        if (d === 'S') return dy;
+        if (d === 'N') return -dy;
+        if (d === 'E') return dx;
+        return -dx; // W
+      };
+      const ranked = (['S', 'E', 'W'] as CardinalDir[])
+        .filter(d => !used.has(d))
+        .sort((a, b) => score(b) - score(a));
+      const pick: CardinalDir = ranked[0]
+        ?? preferOrder.find(d => !used.has(d))
+        ?? 'S';
+      out.set(edgeId(idx, edge), pick);
+      used.add(pick);
     }
 
     // Pass 2: honor no/false by pinning to the side that points toward

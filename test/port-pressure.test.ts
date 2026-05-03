@@ -36,12 +36,16 @@ function nodeByLabel(doc: ReturnType<typeof parse>, label: string) {
 }
 
 describe('grid port pressure — incident response', () => {
-  it('"Yes" from `Have they arrived?` exits the south tip of the diamond', () => {
+  it('"Yes" from `Have they arrived?` exits the east tip toward Monitor', () => {
+    // Geometry-aware decision pinning: when the yes-branch target sits
+    // in a different column from the source decision, the exit cardinal
+    // points toward the target rather than dropping out the south tip
+    // and U-turning. Monitor lives in the column east of the diamond,
+    // so the yes edge should leave the east tip.
     const { doc, routes } = pipeline('incident-response.flow');
     const decision = nodeByLabel(doc, 'Have they arrived?');
     const monitor = nodeByLabel(doc, 'Monitor until resolved');
 
-    // The yes-branch from this decision targets Monitor.
     const yesEdge = doc.edges.find(
       e => e.from === decision.id && e.to === monitor.id && e.condition === 'yes',
     );
@@ -51,10 +55,10 @@ describe('grid port pressure — incident response', () => {
     expect(r).toBeDefined();
     const start = r!.waypoints![0];
 
-    // South tip of a decision diamond: x = center, y = center + height/2.
-    const expectedY = (decision.y ?? 0) + (decision.height ?? 0) / 2;
-    expect(start.y).toBeCloseTo(expectedY, 1);
-    expect(start.x).toBeCloseTo(decision.x ?? 0, 1);
+    // East tip of the diamond (decisionPort uses 0.9 * hw inset).
+    const hw = (decision.width ?? 0) / 2;
+    expect(start.x).toBeCloseTo((decision.x ?? 0) + hw * 0.9, 1);
+    expect(start.y).toBeCloseTo(decision.y ?? 0, 1);
   });
 });
 
