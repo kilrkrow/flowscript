@@ -46,21 +46,36 @@ export function renderSVG(doc: FlowDocument, routes: Map<string, RouteResult>, o
 }
 
 function renderDefs(theme: Theme): SvgElement {
-  return el('defs', {},
-    // Arrow marker
-    el('marker', {
-      id: 'fs-arrow',
-      markerWidth: theme.edge.arrowSize,
-      markerHeight: theme.edge.arrowSize * 0.8,
-      refX: theme.edge.arrowSize - 1,
-      refY: theme.edge.arrowSize * 0.4,
+  // Emit one arrow marker per stroke colour the renderer will use.
+  // Browsers do not inherit `currentColor` reliably across <marker> in all
+  // engines, so we register a dedicated marker per semantic stroke and the
+  // edge picks the matching `marker-end` URL.
+  const arrowSize = theme.edge.arrowSize;
+  const markerPath = `M0,0 L${arrowSize},${arrowSize * 0.4} L0,${arrowSize * 0.8} Z`;
+  const markers: SvgElement[] = [];
+  const seenColors = new Set<string>();
+  function pushMarker(id: string, color: string) {
+    if (seenColors.has(`${id}|${color}`)) return;
+    seenColors.add(`${id}|${color}`);
+    markers.push(el('marker', {
+      id,
+      markerWidth: arrowSize,
+      markerHeight: arrowSize * 0.8,
+      refX: arrowSize - 1,
+      refY: arrowSize * 0.4,
       orient: 'auto',
     },
-      el('path', {
-        d: `M0,0 L${theme.edge.arrowSize},${theme.edge.arrowSize * 0.4} L0,${theme.edge.arrowSize * 0.8} Z`,
-        fill: theme.edge.stroke,
-      }),
-    ),
+      el('path', { d: markerPath, fill: color, class: 'fs-arrow-head' }),
+    ));
+  }
+  pushMarker('fs-arrow', theme.edge.stroke);
+  const semStrokes = theme.edge.semanticStrokes ?? {};
+  for (const cls of ['fs-edge-yes', 'fs-edge-no', 'fs-edge-retry'] as const) {
+    const color = semStrokes[cls] ?? theme.edge.stroke;
+    pushMarker(`fs-arrow-${classSuffix(cls)}`, color);
+  }
+  return el('defs', {},
+    ...markers,
     // Drop shadow filter
     el('filter', {
       id: 'fs-shadow',
@@ -73,6 +88,11 @@ function renderDefs(theme: Theme): SvgElement {
       }),
     ),
   );
+}
+
+/** Strip `fs-edge-` prefix to produce the marker-id suffix. */
+function classSuffix(cls: 'fs-edge-yes' | 'fs-edge-no' | 'fs-edge-retry'): string {
+  return cls.replace('fs-edge-', '');
 }
 
 function renderLanes(doc: FlowDocument, theme: Theme): SvgElement {
@@ -250,13 +270,23 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
 
     const edgeGroup: (SvgElement | string)[] = [];
 
-    // Path
+    // Path — pick a marker whose fill matches the chosen stroke so the
+    // arrowhead colour stays in sync with the edge body. Custom per-edge
+    // strokes still use the default marker (no per-stroke marker can be
+    // synthesised at parse time); semantic classes get a dedicated marker.
+    const markerId =
+      edge.style?.stroke
+        ? 'fs-arrow'
+        : semanticClass === 'fs-edge-yes'   ? 'fs-arrow-yes'
+        : semanticClass === 'fs-edge-no'    ? 'fs-arrow-no'
+        : semanticClass === 'fs-edge-retry' ? 'fs-arrow-retry'
+        : 'fs-arrow';
     edgeGroup.push(el('path', {
       d: route.pathData,
       fill: 'none',
       stroke: semanticStroke,
       'stroke-width': theme.edge.strokeWidth,
-      'marker-end': 'url(#fs-arrow)',
+      'marker-end': `url(#${markerId})`,
       class: ['fs-edge-path', semanticClass].filter(Boolean).join(' '),
       ...(isDashed ? { 'stroke-dasharray': '6,3' } : {}),
     }));

@@ -15,6 +15,10 @@ import { getRouting, getDirective } from '../parser/ast.js';
 import { getPortForNodeShape, type CardinalDir as ShapeDir } from './shape-ports.js';
 import { getGridMeta } from './dagre-layout.js';
 import type { GridLayoutMeta } from './grid-layout.js';
+import {
+  reservePorts, semiCardinalToCardinal,
+  type EdgePreferences, type EdgePortReservation, type PortReservationResult,
+} from './port-reservation.js';
 
 export interface RouteResult {
   /** SVG path data string (M, L, Q, C commands) */
@@ -105,13 +109,15 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
   const gridMeta = getGridMeta(doc);
   const gridChannels = gridMeta ? buildGridChannels(doc, gridMeta) : null;
 
-  // Grid-aware port pressure: pre-pass counts how many edges intend to
-  // attach to each (nodeId, side, role) so we can spread them along the
-  // edge and, for the most contested cases, redirect to a free side.
-  // Pressure is only collected when grid layout is active — swimlane
-  // layout has its own portUsage/portIndex maps above.
-  const gridPortPressure = gridMeta && gridChannels
-    ? buildGridPortPressure(doc, gridMeta, gridChannels, decisionExitDir)
+  // Grid-aware port reservation: pre-pass picks a cardinal port per edge
+  // per role, applying the simple availability rules (no opposite-direction
+  // reuse if any other cardinal is free; no same-direction reuse if any
+  // other cardinal is free; semi-cardinal fallback only after all four
+  // cardinals are exhausted). Geometry only ranks the candidates — the
+  // actual choice is driven by occupancy. This replaces the older
+  // pressure-then-swap logic with a single ordered pass.
+  const gridReservation = gridMeta && gridChannels
+    ? buildGridReservation(doc, gridMeta, gridChannels, decisionExitDir)
     : null;
 
   for (let i = 0; i < doc.edges.length; i++) {
@@ -133,13 +139,13 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
       result = routeGridSkip(
         edge, fromNode, toNode, cornerRadius,
         gridMeta, gridChannels, doc, i,
-        gridPortPressure,
+        gridReservation,
       );
     } else if (gridMeta && gridChannels) {
       result = routeGridLocal(
         edge, fromNode, toNode, cornerRadius,
         gridMeta, gridChannels, overrideExit,
-        gridPortPressure, i, edge,
+        gridReservation, i, edge,
       );
     } else if (hasLanes) {
       result = routeCardinal(
@@ -551,41 +557,61 @@ function routeGridLocal(
   meta: GridLayoutMeta,
   _channels: GridChannels,
   overrideExit?: CardinalDir,
-  pressure?: GridPortPressure | null,
+  reservation?: PortReservationResult | null,
   edgeIdx?: number,
   _edgeRef?: FlowEdge,
 ): RouteResult {
   const dirs = predictLocalDirs(edge, from, to, meta, overrideExit);
-  let exitDir = dirs.exitDir;
-  let entryDir = dirs.entryDir;
+  // Reservation, if available, supersedes the geometry prediction so the
+  // simple "no opposite-direction reuse / no same-direction reuse if free"
+  // rules win over local heuristics.
+  const reservedKey = edgeIdx !== undefined ? edgeId(edgeIdx, edge) : '';
+  const reserved = reservation && edgeIdx !== undefined
+    ? reservation.byEdgeKey.get(reservedKey)
+    : undefined;
+  const exitDir = (reserved?.exitDir as CardinalDir | undefined) && !reserved!.exitIsSemi
+    ? (reserved!.exitDir as CardinalDir)
+    : dirs.exitDir;
+  const entryDir = (reserved?.entryDir as CardinalDir | undefined) && !reserved!.entryIsSemi
+    ? (reserved!.entryDir as CardinalDir)
+    : dirs.entryDir;
 
-  // Pressure-based alternate-side switch: when the chosen entry port is
-  // crowded but a perpendicular alternate is free, prefer the alternate.
-  // We only do this for non-decision targets — decisions still want their
-  // tip ports.
-  if (pressure && edgeIdx !== undefined) {
-    const swap = maybeSwapEntrySide(
-      edge, from, to, meta, exitDir, entryDir, pressure,
-    );
-    entryDir = swap;
+  const exit = portForReserved(from, exitDir, reserved, 'exit', dirs.exitDir);
+  const entry = portForReserved(to, entryDir, reserved, 'entry', dirs.entryDir);
+  const exitFinal = applyReservationSpread(from, exitDir, reserved, 'exit');
+  const entryFinal = applyReservationSpread(to, entryDir, reserved, 'entry');
+
+  const exitPt = exitFinal ?? exit;
+  const entryPt = entryFinal ?? entry;
+  // When the L-bend that buildOrthogonalWaypoints would produce passes
+  // through another node in the source row, force a row-gap detour: step
+  // out vertically into the inter-row gap before crossing horizontally.
+  // This catches the V→H case where the corner sits inside a sibling
+  // node's bounding box.
+  const fromRow = meta.nodeRow.get(edge.from) ?? 0;
+  const exitVertical = (exitDir === 'N' || exitDir === 'S');
+  const entryHorizontal = (entryDir === 'E' || entryDir === 'W');
+  const horizontalDir: CardinalDir =
+    entryPt.x > exitPt.x ? 'E' : 'W';
+  const wouldCornerPierce =
+    exitVertical && entryHorizontal &&
+    cornerWouldPierceRow(meta, edge.from, fromRow, exitPt, entryPt, horizontalDir);
+  let waypoints: Port[];
+  if (wouldCornerPierce) {
+    const goingUp = entryPt.y < exitPt.y;
+    const gapY = goingUp
+      ? (from.y ?? 0) - (from.height ?? 44) / 2 - 30
+      : (from.y ?? 0) + (from.height ?? 44) / 2 + 30;
+    waypoints = [
+      exitPt,
+      { x: exitPt.x, y: gapY },
+      { x: entryPt.x, y: gapY },
+      { x: entryPt.x, y: entryPt.y },
+      entryPt,
+    ];
+  } else {
+    waypoints = buildOrthogonalWaypoints(exitPt, entryPt, exitDir, entryDir);
   }
-
-  const fromPorts = getNodePorts(from);
-  const toPorts = getNodePorts(to);
-  const exit = portForDir(fromPorts, exitDir);
-  let entry = portForDir(toPorts, entryDir);
-
-  // Spread along the entry side when multiple edges share this port.
-  if (pressure && edgeIdx !== undefined && to.shape !== 'decision') {
-    entry = applyPortSpread(to, entryDir, edge, edgeIdx, 'entry', pressure);
-  }
-  // Spread along the exit side too (process nodes only; decisions keep tips).
-  let exitFinal = exit;
-  if (pressure && edgeIdx !== undefined && from.shape !== 'decision') {
-    exitFinal = applyPortSpread(from, exitDir, edge, edgeIdx, 'exit', pressure);
-  }
-
-  const waypoints = buildOrthogonalWaypoints(exitFinal, entry, exitDir, entryDir);
   const pathData = waypointsToRoundedPath(waypoints, cornerRadius);
   const labelPos = getPathMidpoint(waypoints);
   return {
@@ -595,6 +621,70 @@ function routeGridLocal(
     yieldOnCross: edge.retry === true,
   };
 }
+
+/**
+ * Resolve a reservation's per-edge dir to an actual port on the node.
+ * Cardinal reservations get the standard tip / cardinal port; semi-cardinal
+ * reservations get the closest cardinal with a 30%-of-side offset.
+ */
+function portForReserved(
+  node: FlowNode,
+  dir: CardinalDir,
+  reserved: EdgePortReservation | undefined,
+  role: 'exit' | 'entry',
+  fallbackDir: CardinalDir,
+): Port {
+  if (!reserved) return getPortForNodeShape(node, dir);
+  const isSemi = role === 'exit' ? reserved.exitIsSemi : reserved.entryIsSemi;
+  if (!isSemi) return getPortForNodeShape(node, dir);
+  // Semi-cardinal: use the originally preferred axis to decide projection.
+  const axis: 'V' | 'H' = (fallbackDir === 'N' || fallbackDir === 'S') ? 'V' : 'H';
+  const r = role === 'exit' ? reserved.exitDir : reserved.entryDir;
+  const { cardinal, offset } = semiCardinalToCardinal(
+    r, axis, node.width ?? 180, node.height ?? 44,
+  );
+  return getPortForNodeShape(node, cardinal, offset);
+}
+
+/**
+ * If multiple edges share the same (node, dir, role) bucket, spread them
+ * along the side using the index/total recorded in the reservation. Returns
+ * undefined when no spread is required so callers can fall back to the
+ * straight reserved port.
+ */
+function applyReservationSpread(
+  node: FlowNode,
+  dir: CardinalDir,
+  reserved: EdgePortReservation | undefined,
+  role: 'exit' | 'entry',
+): Port | undefined {
+  if (!reserved) return undefined;
+  if (node.shape === 'decision') return undefined; // diamonds keep tip ports
+  const total = role === 'exit' ? reserved.exitTotal : reserved.entryTotal;
+  const idx = role === 'exit' ? reserved.exitIndex : reserved.entryIndex;
+  const isSemi = role === 'exit' ? reserved.exitIsSemi : reserved.entryIsSemi;
+  if (isSemi) {
+    // Semi-cardinal already uses an offset; layer in a small spread to
+    // separate co-occupants of the same corner.
+    const w = node.width ?? 180;
+    const h = node.height ?? 44;
+    const axis: 'V' | 'H' = (dir === 'N' || dir === 'S') ? 'V' : 'H';
+    const semiDir = role === 'exit' ? reserved.exitDir : reserved.entryDir;
+    const { cardinal, offset } = semiCardinalToCardinal(semiDir, axis, w, h);
+    if (total <= 1) return getPortForNodeShape(node, cardinal, offset);
+    const span = (cardinal === 'N' || cardinal === 'S') ? w * 0.2 : h * 0.2;
+    const tweak = (idx / Math.max(1, total - 1) - 0.5) * span;
+    return getPortForNodeShape(node, cardinal, offset + tweak);
+  }
+  if (total <= 1) return undefined;
+  const spreadH = (node.width ?? 180) * 0.6;
+  const spreadV = (node.height ?? 44) * 0.6;
+  const offsetH = (idx / (total - 1) - 0.5) * spreadH;
+  const offsetV = (idx / (total - 1) - 0.5) * spreadV;
+  const offset = (dir === 'N' || dir === 'S') ? offsetH : offsetV;
+  return getPortForNodeShape(node, dir, offset);
+}
+
 
 /**
  * Route a "skip" edge — one that bypasses one or more rows of nodes
@@ -614,7 +704,7 @@ function routeGridSkip(
   channels: GridChannels,
   _doc: FlowDocument,
   edgeIndex: number,
-  pressure?: GridPortPressure | null,
+  reservation?: PortReservationResult | null,
 ): RouteResult {
   const fromCol = meta.nodeColumn.get(edge.from) ?? 'main';
   const toCol = meta.nodeColumn.get(edge.to) ?? 'main';
@@ -725,42 +815,56 @@ function routeGridSkip(
     exitFinalDir = goingDown ? 'S' : 'N';
   }
 
-  const fromPorts = getNodePorts(from);
-  const toPorts = getNodePorts(to);
-  let exit = portForDir(fromPorts, exitFinalDir);
-  const finalEntryDir: CardinalDir = usingTopEntry ? 'N' : entryDir;
-  let entry = usingTopEntry
-    ? portForDir(toPorts, 'N')
-    : portForDir(toPorts, entryDir);
+  // Reservation supersedes the geometric pick when present, so the
+  // higher-priority "no opposite-direction reuse" rule wins.
+  const ek = edgeId(edgeIndex, edge);
+  const reserved = reservation?.byEdgeKey.get(ek);
+  let resolvedExitDir: CardinalDir = exitFinalDir;
+  let resolvedEntryDir: CardinalDir = usingTopEntry ? 'N' : entryDir;
+  if (reserved && !reserved.exitIsSemi) {
+    resolvedExitDir = reserved.exitDir as CardinalDir;
+  }
+  if (reserved && !reserved.entryIsSemi) {
+    resolvedEntryDir = reserved.entryDir as CardinalDir;
+  }
 
-  // Apply port-pressure spread: if multiple skip edges land on the same
-  // (target, side) port, fan them out along that side so they don't all
-  // pile onto a single point.
-  if (pressure && to.shape !== 'decision') {
-    entry = applyPortSpread(to, finalEntryDir, edge, edgeIndex, 'entry', pressure);
-  }
-  if (pressure && from.shape !== 'decision') {
-    exit = applyPortSpread(from, exitFinalDir, edge, edgeIndex, 'exit', pressure);
-  }
+  let exit = portForReserved(from, resolvedExitDir, reserved, 'exit', exitFinalDir);
+  let entry = portForReserved(to, resolvedEntryDir, reserved, 'entry',
+    usingTopEntry ? 'N' : entryDir);
+  const exitSpread = applyReservationSpread(from, resolvedExitDir, reserved, 'exit');
+  const entrySpread = applyReservationSpread(to, resolvedEntryDir, reserved, 'entry');
+  if (exitSpread) exit = exitSpread;
+  if (entrySpread) entry = entrySpread;
+  // Update locals consumed by waypoint construction below.
+  // exitFinalDir / finalEntryDir may have shifted to a new cardinal due to
+  // reservation; update them so the path geometry matches.
+  exitFinalDir = resolvedExitDir;
+  const finalEntryDir: CardinalDir = resolvedEntryDir;
 
   // Build waypoints. When exiting on a side, jog out to channel at the
-  // source row first. When exiting top/bottom, drop into a row-gap y
-  // before going horizontal — this is the safe path that doesn't cross
-  // other nodes sharing the source's row.
+  // source row first. When exiting top/bottom — or when the row is
+  // obstructed by another node between source and channel — drop into
+  // the inter-row gap before going horizontal, so the segment doesn't
+  // pierce a sibling.
+  const wouldPierceHorizontal =
+    (exitFinalDir === 'E' || exitFinalDir === 'W') &&
+    anyNodeInRowBetween(meta, edge.from, fromRow, exitFinalDir);
   const waypoints: Port[] = [exit];
-  if (exitFinalDir === 'E' || exitFinalDir === 'W') {
+  if ((exitFinalDir === 'E' || exitFinalDir === 'W') && !wouldPierceHorizontal) {
     waypoints.push({ x: channelX, y: exit.y });
   } else {
-    // Vertical exit: step into the gap below the source row, then go
-    // horizontal toward the channel. Use the row gap (half ROW_GAP / 2
-    // below the source's bottom edge).
+    // Vertical exit (or forced detour): step into the gap before/after
+    // the source row, then go horizontal toward the channel. Detours use
+    // the half-row gap so they don't cross other nodes sharing the row.
     const gapY = goingDown
-      ? exit.y + 30
-      : exit.y - 30;
+      ? (from.y ?? 0) + (from.height ?? 44) / 2 + 30
+      : (from.y ?? 0) - (from.height ?? 44) / 2 - 30;
     waypoints.push({ x: exit.x, y: gapY });
     waypoints.push({ x: channelX, y: gapY });
   }
-  if (usingTopEntry) {
+  // Top/bottom entry: drop into the side first, then jog into the port.
+  // Side entry: come down the channel and slide horizontally to the port.
+  if (finalEntryDir === 'N' || finalEntryDir === 'S') {
     waypoints.push({ x: channelX, y: entry.y });
     waypoints.push({ x: entry.x, y: entry.y });
     waypoints.push(entry);
@@ -780,41 +884,31 @@ function routeGridSkip(
   };
 }
 
-// ── Grid port pressure ────────────────────────────────────────────────
-
-interface GridPortPressure {
-  /** "nodeId:dir:role" -> total edges that intend to attach there */
-  count: Map<string, number>;
-  /** "edgeKey:role" -> 0-based index of this edge among co-attached siblings */
-  index: Map<string, number>;
-  /** "edgeKey:role" -> the predicted direction at that role */
-  dir: Map<string, CardinalDir>;
-}
+// ── Grid port reservation ────────────────────────────────────────────
 
 /**
- * Pre-pass: predict each grid edge's exit/entry direction (without
- * actually routing it) and tally per-(node, side, role) occupancy.
- * The route functions use this to:
- *   - spread multiple edges along the same side rather than stacking,
- *   - optionally redirect to a free perpendicular side when the natural
- *     side is heavily contested AND the alternate is unused.
+ * Compute the per-edge port reservation for a grid-layout document.
  *
- * The prediction mirrors `routeGridLocal` / `routeGridSkip`'s direction
- * logic; if those routers diverge later they won't crash — the spread
- * just won't be tight on the actual chosen side.
+ * For each edge we build a *preference list* of cardinals (driven by the
+ * existing geometry helpers `predictLocalDirs` / `predictSkipDirs`) and
+ * hand it to {@link reservePorts}. The reservation pass runs the simple
+ * availability rules — no opposite-direction reuse if any other cardinal
+ * is free, no same-direction reuse if any other cardinal is free,
+ * geometry only as the tie-breaker, and semi-cardinal (NE/SE/SW/NW)
+ * fallback once all four cardinals are taken for the same role.
+ *
+ * Multi-branch decision exits get their pre-assigned tip pinned via
+ * `exitPin`, so the reserver still tracks them as occupied (preventing
+ * an inbound edge from later landing on the same diamond tip) without
+ * the availability search rewriting the per-branch decisions.
  */
-function buildGridPortPressure(
+function buildGridReservation(
   doc: FlowDocument,
   meta: GridLayoutMeta,
   channels: GridChannels,
   decisionExitDir: Map<string, CardinalDir>,
-): GridPortPressure {
-  const count = new Map<string, number>();
-  const index = new Map<string, number>();
-  const dir = new Map<string, CardinalDir>();
-
-  // First pass: predict directions.
-  const cursor = new Map<string, number>();
+): PortReservationResult {
+  const prefs: EdgePreferences[] = [];
   for (let i = 0; i < doc.edges.length; i++) {
     const edge = doc.edges[i];
     if (edge.from === edge.to) continue;
@@ -822,41 +916,84 @@ function buildGridPortPressure(
     const toNode = doc.nodes.get(edge.to);
     if (!fromNode || !toNode) continue;
 
-    const overrideExit = decisionExitDir.get(edgeId(i, edge));
-    const isSkip = meta.skipEdges.has(edgeId(i, edge));
+    const ek = edgeId(i, edge);
+    const overrideExit = decisionExitDir.get(ek);
+    const isSkip = meta.skipEdges.has(ek);
     const dirs = isSkip
       ? predictSkipDirs(edge, fromNode, toNode, meta, channels)
       : predictLocalDirs(edge, fromNode, toNode, meta, overrideExit);
 
-    const ek = edgeId(i, edge);
-    dir.set(`${ek}:exit`, dirs.exitDir);
-    dir.set(`${ek}:entry`, dirs.entryDir);
+    // Build ranked candidate lists. The first entry is the natural pick;
+    // the same-axis opposite follows, then perpendiculars (with the side
+    // facing the *other* node listed first so a forced detour lands on
+    // the closer face). `nearExit`/`nearEntry` reflect "which
+    // perpendicular faces the corresponding source/target".
+    const dx = (toNode.x ?? 0) - (fromNode.x ?? 0);
+    const dy = (toNode.y ?? 0) - (fromNode.y ?? 0);
+    const nearExitH: CardinalDir = dx >= 0 ? 'E' : 'W';
+    const nearExitV: CardinalDir = dy >= 0 ? 'S' : 'N';
+    const nearEntryH: CardinalDir = dx >= 0 ? 'W' : 'E';
+    const nearEntryV: CardinalDir = dy >= 0 ? 'N' : 'S';
+    const exitNear =
+      dirs.exitDir === 'N' || dirs.exitDir === 'S' ? nearExitH : nearExitV;
+    const entryNear =
+      dirs.entryDir === 'N' || dirs.entryDir === 'S' ? nearEntryH : nearEntryV;
+    const exitPrefs = rankAround(dirs.exitDir, exitNear);
+    const entryPrefs = rankAround(dirs.entryDir, entryNear);
 
-    const exitKey = `${edge.from}:${dirs.exitDir}:exit`;
-    const entryKey = `${edge.to}:${dirs.entryDir}:entry`;
-    count.set(exitKey, (count.get(exitKey) ?? 0) + 1);
-    count.set(entryKey, (count.get(entryKey) ?? 0) + 1);
+    // Decisions: the multi-branch pre-pass already pinned a tip and we
+    // must preserve it because diamonds attach at the tip itself.
+    const exitPin = (overrideExit && fromNode.shape === 'decision')
+      ? overrideExit
+      : (fromNode.shape === 'decision' ? dirs.exitDir : undefined);
+    const entryPin = toNode.shape === 'decision' ? dirs.entryDir : undefined;
+
+    prefs.push({
+      edgeKey: ek,
+      edge,
+      fromNode,
+      toNode,
+      exitPrefs,
+      entryPrefs,
+      exitPin,
+      entryPin,
+    });
   }
+  return reservePorts(doc, prefs);
+}
 
-  // Second pass: assign per-edge index along its (node, dir, role) bucket.
-  for (let i = 0; i < doc.edges.length; i++) {
-    const edge = doc.edges[i];
-    if (edge.from === edge.to) continue;
-    const ek = edgeId(i, edge);
-    const exitDir = dir.get(`${ek}:exit`);
-    const entryDir = dir.get(`${ek}:entry`);
-    if (!exitDir || !entryDir) continue;
-    const exitKey = `${edge.from}:${exitDir}:exit`;
-    const entryKey = `${edge.to}:${entryDir}:entry`;
-    const exitI = cursor.get(exitKey) ?? 0;
-    const entryI = cursor.get(entryKey) ?? 0;
-    index.set(`${ek}:exit`, exitI);
-    index.set(`${ek}:entry`, entryI);
-    cursor.set(exitKey, exitI + 1);
-    cursor.set(entryKey, entryI + 1);
+/**
+ * Build a candidate list around the geometry-preferred direction.
+ *
+ * Order: preferred → its same-axis opposite → near perpendicular →
+ * far perpendicular. Keeping the same-axis opposite *second* means a
+ * forced rerouting (e.g. when the preferred N is blocked by inbound
+ * traffic) still falls onto the vertical axis (S) before crossing the
+ * node sideways. The `nearPerpendicular` argument lets the reserver
+ * pick the side of the target that faces the source's column — so a
+ * blocked S falls to W when the source is west of the target, not E.
+ */
+function rankAround(
+  preferred: CardinalDir,
+  nearPerpendicular?: CardinalDir,
+): CardinalDir[] {
+  const opposite = oppositeCardinal(preferred);
+  const perpendiculars: CardinalDir[] =
+    preferred === 'N' || preferred === 'S' ? ['E', 'W'] : ['N', 'S'];
+  const near = nearPerpendicular && perpendiculars.includes(nearPerpendicular)
+    ? nearPerpendicular
+    : perpendiculars[0];
+  const far = near === perpendiculars[0] ? perpendiculars[1] : perpendiculars[0];
+  return [preferred, opposite, near, far];
+}
+
+function oppositeCardinal(d: CardinalDir): CardinalDir {
+  switch (d) {
+    case 'N': return 'S';
+    case 'S': return 'N';
+    case 'E': return 'W';
+    case 'W': return 'E';
   }
-
-  return { count, index, dir };
 }
 
 /** Predict the exit/entry direction for a non-skip grid edge. */
@@ -958,72 +1095,61 @@ function predictSkipDirs(
 }
 
 /**
- * Return a port on `node` for `dir` with a centerline offset chosen by
- * this edge's index in the (node, dir, role) bucket. Spreads ports over
- * 60% of the edge length (matching the swimlane router's convention).
+ * Heuristic: would the corner of an L-shaped path between exit and entry
+ * land inside a sibling node's bounding box? This catches grid-local
+ * routes whose source-row contains another column-occupying node along
+ * the corner's path. Used to upgrade the L into a Z that detours through
+ * the inter-row gap.
  */
-function applyPortSpread(
-  node: FlowNode,
-  dir: CardinalDir,
-  edge: FlowEdge,
-  edgeIdx: number,
-  role: 'exit' | 'entry',
-  pressure: GridPortPressure,
-): Port {
-  const ek = edgeId(edgeIdx, edge);
-  const total = pressure.count.get(`${node.id}:${dir}:${role}`) ?? 1;
-  const idx = pressure.index.get(`${ek}:${role}`) ?? 0;
-  if (total <= 1) return getPortForNodeShape(node, dir);
-
-  const spreadH = (node.width ?? 180) * 0.6;
-  const spreadV = (node.height ?? 44) * 0.6;
-  const offsetH = (idx / (total - 1) - 0.5) * spreadH;
-  const offsetV = (idx / (total - 1) - 0.5) * spreadV;
-  const offset = (dir === 'N' || dir === 'S') ? offsetH : offsetV;
-  return getPortForNodeShape(node, dir, offset);
-}
-
-/**
- * If the originally chosen `entryDir` is shared by 3+ edges and a
- * perpendicular side is unused, redirect to the perpendicular side —
- * but only when the swap doesn't put the path on the wrong half-plane.
- *
- * Stays conservative: skip-edge geometry is fragile. We only swap for
- * non-skip targets that aren't decisions (decision tips are visually
- * meaningful). The function returns the (possibly swapped) entryDir.
- */
-function maybeSwapEntrySide(
-  edge: FlowEdge,
-  _from: FlowNode, to: FlowNode,
+function cornerWouldPierceRow(
   meta: GridLayoutMeta,
-  _exitDir: CardinalDir,
-  entryDir: CardinalDir,
-  pressure: GridPortPressure,
-): CardinalDir {
-  if (to.shape === 'decision') return entryDir;
-  const total = pressure.count.get(`${edge.to}:${entryDir}:entry`) ?? 0;
-  if (total < 3) return entryDir;
-
-  // Pick a perpendicular alternate that's unused. Preserve the entry's
-  // half-plane (if entryDir is N keep top; if E keep east) — only swap
-  // along the perpendicular axis.
-  const perpendicular: CardinalDir[] =
-    entryDir === 'N' || entryDir === 'S' ? ['E', 'W'] : ['N', 'S'];
-  for (const alt of perpendicular) {
-    const used = pressure.count.get(`${edge.to}:${alt}:entry`) ?? 0;
-    if (used !== 0) continue;
-    // Sanity: the alternate must point roughly toward the source.
-    const fromRow = meta.nodeRow.get(edge.from) ?? 0;
-    const toRow = meta.nodeRow.get(edge.to) ?? 0;
-    if (alt === 'N' && fromRow >= toRow) return alt;
-    if (alt === 'S' && fromRow <= toRow) return alt;
-    // E/W swap: only safe if source column lies on the matching side.
-    const fromCol = meta.columns.get(meta.nodeColumn.get(edge.from) ?? 'main');
-    const toCol = meta.columns.get(meta.nodeColumn.get(edge.to) ?? 'main');
-    if (alt === 'E' && (fromCol?.x ?? 0) > (toCol?.x ?? 0)) return alt;
-    if (alt === 'W' && (fromCol?.x ?? 0) < (toCol?.x ?? 0)) return alt;
+  sourceId: string,
+  sourceRow: number,
+  exit: { x: number; y: number },
+  entry: { x: number; y: number },
+  horizontalDir: CardinalDir,
+): boolean {
+  const r = meta.rows[sourceRow];
+  if (!r) return false;
+  // The L-corner sits at (exit.x, entry.y). If the horizontal segment at
+  // y=entry.y passes through any column-occupying node lying between
+  // exit.x and entry.x, return true.
+  const corners = meta.rows;
+  for (const row of corners) {
+    if (!row) continue;
+    for (const [, n] of row.nodes) {
+      if (n.id === sourceId) continue;
+      const hw = (n.width ?? 180) / 2;
+      const hh = (n.height ?? 44) / 2;
+      const left = (n.x ?? 0) - hw;
+      const right = (n.x ?? 0) + hw;
+      const top = (n.y ?? 0) - hh;
+      const bot = (n.y ?? 0) + hh;
+      // Vertical leg of the L: x = exit.x, y range [min(exit.y, entry.y), max].
+      const vyMin = Math.min(exit.y, entry.y);
+      const vyMax = Math.max(exit.y, entry.y);
+      const verticalCrosses =
+        exit.x > left && exit.x < right && vyMax > top && vyMin < bot;
+      // Horizontal leg of the L: y = entry.y, x range [min(exit.x, entry.x), max].
+      const hxMin = Math.min(exit.x, entry.x);
+      const hxMax = Math.max(exit.x, entry.x);
+      const horizontalCrosses =
+        entry.y > top && entry.y < bot && hxMax > left && hxMin < right;
+      if ((verticalCrosses || horizontalCrosses) &&
+        // If we move horizontally through a node, the route is corrupt.
+        // Only flag when the offending node sits at a *different* row to
+        // the source — otherwise the standard same-row detour handles it.
+        (n.id !== sourceId)) {
+        // Direction sanity: only count nodes in the half-plane the
+        // horizontal leg actually traverses (e.g. going E means we only
+        // care about nodes east of exit.x and west of entry.x).
+        if (horizontalDir === 'E' && right < exit.x) continue;
+        if (horizontalDir === 'W' && left > exit.x) continue;
+        return true;
+      }
+    }
   }
-  return entryDir;
+  return false;
 }
 
 /**
