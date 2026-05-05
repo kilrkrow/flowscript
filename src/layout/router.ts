@@ -814,10 +814,23 @@ function routeGridSkip(
   } else {
     entryDir = exitDir === 'E' ? 'W' : 'E';
   }
+  // goingDown is used by both south-entry and vertical-exit logic below.
+  const goingDown = (to.y ?? 0) > (from.y ?? 0);
+
+  // South-entry preference: back-edge (source below target) arriving via a
+  // channel that is close to the target's center x → enter from the bottom
+  // so the arrowhead is fully visible and the path doesn't wrap around the side.
+  const usingSouthEntry =
+    !goingDown &&
+    to.shape !== 'decision' &&
+    Math.abs((to.x ?? 0) - channelX) < (to.width ?? 180);
+  if (usingSouthEntry) entryDir = 'S';
+
   // Top-entry preference: target is significantly below the source AND
   // the channel is well clear of the target. Helps the No → Monitor
   // pattern in the incident-response fixture look natural.
   const usingTopEntry =
+    !usingSouthEntry &&
     toRow > fromRow + 1 &&
     Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
 
@@ -826,10 +839,10 @@ function routeGridSkip(
   // the horizontal segment running across other nodes that share the
   // source's row. We retain side-exit only if there's no other node in
   // the source row between source and channel.
-  const goingDown = (to.y ?? 0) > (from.y ?? 0);
-  const useVerticalExit = anyNodeInRowBetween(
-    meta, edge.from, fromRow, exitDir,
-  );
+  // Decision diamonds narrow to a point at their E/W extremes — a sibling
+  // node in the same row does not block a side exit the way a rectangle would.
+  const useVerticalExit = from.shape !== 'decision'
+    && anyNodeInRowBetween(meta, edge.from, fromRow, exitDir);
   let exitFinalDir: CardinalDir = exitDir;
   if (useVerticalExit) {
     exitFinalDir = goingDown ? 'S' : 'N';
@@ -860,6 +873,7 @@ function routeGridSkip(
   // reservation; update them so the path geometry matches.
   exitFinalDir = resolvedExitDir;
   const finalEntryDir: CardinalDir = resolvedEntryDir;
+
 
   // Build waypoints. When exiting on a side, jog out to channel at the
   // source row first. When exiting top/bottom — or when the row is
@@ -966,7 +980,14 @@ function buildGridReservation(
     const exitPin = (overrideExit && fromNode.shape === 'decision')
       ? overrideExit
       : (fromNode.shape === 'decision' ? dirs.exitDir : undefined);
-    const entryPin = toNode.shape === 'decision' ? dirs.entryDir : undefined;
+    // For skip back-edges where geometry predicts S entry, pin it.
+    // S-entry (arriving from below) and S-exit (leaving downward) are
+    // visually distinct and don't conflict — pinning bypasses the
+    // opposite-role check that would otherwise block S and force a
+    // piercing W entry.
+    const entryPin = toNode.shape === 'decision'
+      ? dirs.entryDir
+      : (isSkip && dirs.entryDir === 'S' ? 'S' : undefined);
 
     prefs.push({
       edgeKey: ek,
@@ -1102,10 +1123,13 @@ function predictSkipDirs(
   const fromRow = meta.nodeRow.get(edge.from) ?? 0;
   const toRow = meta.nodeRow.get(edge.to) ?? 0;
   const goingDown = toRow > fromRow;
-  if (toRow < fromRow) {
-    // Upward skip loop: force side-ports
+  if (toRow < fromRow && fromSide === toSide) {
+    // Upward skip loop within the same column-side: force outer side-ports
+    // so the path loops around the outside of the column.
+    // Cross-column upward edges (e.g. E1 → main) keep their natural exitDir.
     exitDir = fromSide > 0 ? 'E' : 'W';
-  } else if (anyNodeInRowBetween(meta, edge.from, fromRow, exitDir)) {
+  } else if (from.shape !== 'decision'
+    && anyNodeInRowBetween(meta, edge.from, fromRow, exitDir)) {
     exitDir = goingDown ? 'S' : 'N';
   }
 
@@ -1114,8 +1138,17 @@ function predictSkipDirs(
   else if (channelX < (to.x ?? 0)) entryDir = 'W';
   else entryDir = exitDir === 'E' ? 'W' : 'E';
 
+  // South-entry preference (mirrors routeGridSkip): back-edge arriving
+  // via a channel close to the target center → enter from the bottom.
+  const usingSouthEntry =
+    !goingDown &&
+    to.shape !== 'decision' &&
+    Math.abs((to.x ?? 0) - channelX) < (to.width ?? 180);
+  if (usingSouthEntry) entryDir = 'S';
+
   // Mirror the top-entry preference in routeGridSkip.
   const usingTopEntry =
+    !usingSouthEntry &&
     toRow > fromRow + 1 &&
     Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
   if (usingTopEntry) entryDir = 'N';
@@ -1264,11 +1297,24 @@ function assignDecisionExits(doc: FlowDocument): Map<string, CardinalDir> {
     // with the natural "enter from top" routing into the diamond.
     const preferOrder: CardinalDir[] = ['S', 'E', 'W', 'N'];
 
-    // Pass 1: honor yes/true by pinning to S.
+    // Pass 1: honor yes/true by pinning to S for forward edges.
+    // Back-edges (target above source) must not pin to S — instead
+    // use the side that faces the target so the path routes correctly.
     for (const { idx, edge } of branches) {
       if (edge.condition === 'yes' || edge.condition === 'true') {
-        out.set(edgeId(idx, edge), 'S');
-        used.add('S');
+        const to = doc.nodes.get(edge.to);
+        const dy = (to?.y ?? 0) - (from.y ?? 0);
+        if (dy >= 0) {
+          // Forward edge: standard S (continue straight down).
+          out.set(edgeId(idx, edge), 'S');
+          used.add('S');
+        } else {
+          // Back-edge: exit toward the target column.
+          const dx = (to?.x ?? 0) - (from.x ?? 0);
+          const pick: CardinalDir = dx <= 0 ? 'W' : 'E';
+          out.set(edgeId(idx, edge), pick);
+          used.add(pick);
+        }
       }
     }
 
