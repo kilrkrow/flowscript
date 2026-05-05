@@ -154,7 +154,7 @@ export function gridLayout(doc: FlowDocument): GridLayoutMeta {
     // pass, not by re-placement.
     if (placed.has(id)) continue;
 
-    const row = Math.max(rowHint, nextFreeRow(rows, column));
+    const row = nextFreeRow(rows, column, rowHint);
     placeNode(rows, columns, node, row, column);
     placed.set(id, { row, column });
 
@@ -282,13 +282,18 @@ function placeNode(
  * given column. In practice, returns `from + 1` unless that row is
  * already occupied in that column — then we walk further down.
  */
-function nextFreeRow(rows: GridRow[], column: string): number {
-  // Find the deepest row that has anything in `column`, then place
-  // below it. If column has nothing yet, place at row 0.
-  for (let i = rows.length - 1; i >= 0; i--) {
-    if (rows[i].nodes.has(column)) return i + 1;
+function nextFreeRow(
+  rows: GridRow[],
+  column: string,
+  rowHint: number = 0,
+): number {
+  // Walk forward from rowHint, skipping any rows already occupied
+  // in this column. This respects the caller's placement intent.
+  let candidate = rowHint;
+  while (candidate < rows.length && rows[candidate]?.nodes.has(column)) {
+    candidate++;
   }
-  return rows.length === 0 ? 0 : 0;
+  return candidate;
 }
 
 /**
@@ -461,6 +466,13 @@ function classifySkipEdges(
     const b = placed.get(e.to);
     if (!a || !b) continue;
     if (e.from === e.to) continue;          // self-loop handled separately
+
+    // Back-edge: target is above source → always route via outer channel.
+    if (b.row < a.row) {
+      skip.add(`${i}:${e.from}->${e.to}`);
+      continue;
+    }
+
     const sameColumn = a.column === b.column;
     const rowGap = Math.abs(a.row - b.row);
     // Same column and >1 rows apart → must skip past intermediate nodes.
