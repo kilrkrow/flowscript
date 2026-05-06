@@ -163,7 +163,7 @@ export function gridLayout(doc: FlowDocument): GridLayoutMeta {
     // into side columns.
     const outs = out.get(id) ?? [];
     if (node.shape === 'decision' && outs.length >= 2) {
-      enqueueDecisionBranches(outs, id, row, column, queue, visiting, doc, columns);
+      enqueueDecisionBranches(outs, id, row, column, queue, visiting, doc, columns, rows);
     } else {
       // Linear chain: each child continues in this node's column.
       for (const e of outs) {
@@ -309,6 +309,39 @@ function nextFreeRow(
  * enqueue it; the router treats the edge as a skip and routes it via
  * the outer channel between the source and the existing target.
  */
+/**
+ * Count how many nodes are currently placed in columns on a given side
+ * at or below `fromRow`. Used by the adaptive side-selection logic to
+ * measure how loaded each half of the diagram already is.
+ */
+/** Count nodes already placed in all columns on a given side. */
+function sideLoad(rows: GridRow[], side: 'E' | 'W'): number {
+  let n = 0;
+  for (const row of rows) {
+    for (const colId of row.nodes.keys()) {
+      if (side === 'E' ? colId.startsWith('E') : colId.startsWith('W')) n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * Choose between two candidate sides, preferring `preferred` unless the
+ * other side is substantially lighter (2× threshold with a small slack).
+ * This keeps the no/false → West convention in balanced diagrams while
+ * letting heavier flows balance across both sides.
+ */
+function adaptiveSide(
+  preferred: 'E' | 'W',
+  rows: GridRow[],
+): 'E' | 'W' {
+  const alt: 'E' | 'W' = preferred === 'W' ? 'E' : 'W';
+  const prefLoad = sideLoad(rows, preferred);
+  const altLoad  = sideLoad(rows, alt);
+  // Switch only when preferred side is clearly heavier than the other.
+  return prefLoad > altLoad * 2 + 2 ? alt : preferred;
+}
+
 function enqueueDecisionBranches(
   outs: FlowEdge[],
   sourceId: string,
@@ -318,6 +351,7 @@ function enqueueDecisionBranches(
   visiting: Set<string>,
   doc: FlowDocument,
   columns: Map<string, Column>,
+  rows: GridRow[],
 ): void {
   // Categorize.
   type Bucket = { edge: FlowEdge; main: boolean; side: 'E' | 'W' | null };
@@ -339,17 +373,19 @@ function enqueueDecisionBranches(
     buckets[0].main = true;
   }
 
-  // Second pass: assign side columns. No/false branches go West (shorter
-  // retry loops stay left of the happy path). Multi-way branches alternate
-  // W then E so the first custom branch also goes West.
+  // Second pass: assign side columns.
+  // no/false → West by convention, but adaptiveSide() may flip to East if
+  // the West side is already significantly more loaded below this row.
+  // Multi-way branches alternate W/E, also subject to load balancing.
   let nextSideIdx = 0;
   for (const b of buckets) {
     if (b.main) continue;
     const cond = (b.edge.condition ?? '').toLowerCase();
     if (cond === 'no' || cond === 'false') {
-      b.side = 'W';
+      b.side = adaptiveSide('W', rows);
     } else {
-      b.side = (nextSideIdx % 2 === 0) ? 'W' : 'E';
+      const preferred: 'E' | 'W' = (nextSideIdx % 2 === 0) ? 'W' : 'E';
+      b.side = adaptiveSide(preferred, rows);
       nextSideIdx++;
     }
   }
