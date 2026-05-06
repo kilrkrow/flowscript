@@ -833,7 +833,7 @@ function routeGridSkip(
   // pattern in the incident-response fixture look natural.
   const usingTopEntry =
     !usingSouthEntry &&
-    toRow > fromRow + 1 &&
+    toRow > fromRow &&
     Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
 
   // For the source side: prefer exiting on S (or N if going up) so the
@@ -1169,7 +1169,7 @@ function predictSkipDirs(
   // Mirror the top-entry preference in routeGridSkip.
   const usingTopEntry =
     !usingSouthEntry &&
-    toRow > fromRow + 1 &&
+    toRow > fromRow &&
     Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
   if (usingTopEntry) entryDir = 'N';
 
