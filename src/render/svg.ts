@@ -22,8 +22,10 @@ export interface RenderOptions {
 export function renderSVG(doc: FlowDocument, routes: Map<string, RouteResult>, options: RenderOptions): string {
   const { theme, padding = 40 } = options;
 
-  // Calculate viewBox from node positions
-  const bounds = calculateBounds(doc, padding);
+  // Calculate viewBox from node positions AND route waypoints so that
+  // outer-channel paths (which extend beyond node bounding boxes) are
+  // not clipped.
+  const bounds = calculateBounds(doc, routes, padding);
   const width = bounds.maxX - bounds.minX;
   const height = bounds.maxY - bounds.minY;
 
@@ -337,8 +339,18 @@ function renderNodes(doc: FlowDocument, theme: Theme): SvgElement {
 
 // --- Bounds calculation ---
 
-function calculateBounds(doc: FlowDocument, padding: number) {
+function calculateBounds(doc: FlowDocument, routes: Map<string, RouteResult>, padding: number) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  // Include route waypoints so outer-channel paths don't get clipped.
+  for (const [, route] of routes) {
+    for (const wp of route.waypoints ?? []) {
+      minX = Math.min(minX, wp.x);
+      minY = Math.min(minY, wp.y);
+      maxX = Math.max(maxX, wp.x);
+      maxY = Math.max(maxY, wp.y);
+    }
+  }
 
   for (const [_, node] of doc.nodes) {
     if (node.x === undefined || node.y === undefined) continue;

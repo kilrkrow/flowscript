@@ -737,7 +737,7 @@ function routeGridSkip(
   // toward which the target lies (or the suggested exit direction
   // from a multi-branch decision pre-pass).
   const decisionExit = from.shape === 'decision'
-    ? edge.condition === 'no' || edge.condition === 'false' ? 'E' : null
+    ? edge.condition === 'no' || edge.condition === 'false' ? 'W' : null
     : null;
 
   // Determine the channel x and exit/entry sides.
@@ -778,10 +778,10 @@ function routeGridSkip(
       channelX = (channels.west.get('main') ?? channels.outerWest);
     }
   } else if (fromSide === 0 && toSide === 0) {
-    // Main → main. Use outer channel; respect decision-condition hint.
-    if (decisionExit === 'E') {
-      exitDir = 'E';
-      channelX = channels.outerEast;
+    // Main → main. No/false back-edges run West; everything else defaults East.
+    if (decisionExit === 'W') {
+      exitDir = 'W';
+      channelX = channels.outerWest;
     } else {
       exitDir = 'E';
       channelX = channels.outerEast;
@@ -818,12 +818,14 @@ function routeGridSkip(
   const goingDown = (to.y ?? 0) > (from.y ?? 0);
 
   // South-entry preference: back-edge (source below target) arriving via a
-  // channel that is close to the target's center x → enter from the bottom
-  // so the arrowhead is fully visible and the path doesn't wrap around the side.
+  // channel that nearly aligns with the target's center x → enter from the
+  // bottom so the arrowhead is fully visible. Only fires when the channel
+  // is very close to the target center (within 25% of width); otherwise the
+  // natural side entry is cleaner and avoids paths routing through the bottom.
   const usingSouthEntry =
     !goingDown &&
     to.shape !== 'decision' &&
-    Math.abs((to.x ?? 0) - channelX) < (to.width ?? 180);
+    Math.abs((to.x ?? 0) - channelX) < (to.width ?? 180) * 0.25;
   if (usingSouthEntry) entryDir = 'S';
 
   // Top-entry preference: target is significantly below the source AND
@@ -842,7 +844,7 @@ function routeGridSkip(
   // Decision diamonds narrow to a point at their E/W extremes — a sibling
   // node in the same row does not block a side exit the way a rectangle would.
   const useVerticalExit = from.shape !== 'decision'
-    && anyNodeInRowBetween(meta, edge.from, fromRow, exitDir);
+    && anyNodeBetweenSourceAndChannel(meta, edge.from, fromRow, exitDir, channelX);
   let exitFinalDir: CardinalDir = exitDir;
   if (useVerticalExit) {
     exitFinalDir = goingDown ? 'S' : 'N';
@@ -882,7 +884,7 @@ function routeGridSkip(
   // pierce a sibling.
   const wouldPierceHorizontal =
     (exitFinalDir === 'E' || exitFinalDir === 'W') &&
-    anyNodeInRowBetween(meta, edge.from, fromRow, exitFinalDir);
+    anyNodeBetweenSourceAndChannel(meta, edge.from, fromRow, exitFinalDir, channelX);
   const waypoints: Port[] = [exit];
   if ((exitFinalDir === 'E' || exitFinalDir === 'W') && !wouldPierceHorizontal) {
     waypoints.push({ x: channelX, y: exit.y });
@@ -896,11 +898,20 @@ function routeGridSkip(
     waypoints.push({ x: exit.x, y: gapY });
     waypoints.push({ x: channelX, y: gapY });
   }
-  // Top/bottom entry: drop into the side first, then jog into the port.
+  // Top/bottom entry: approach from the inter-row gap so the *last* segment
+  // is vertical into the port face. This gives orient="auto" a clear
+  // direction and prevents the arrowhead appearing 90° off.
   // Side entry: come down the channel and slide horizontally to the port.
-  if (finalEntryDir === 'N' || finalEntryDir === 'S') {
-    waypoints.push({ x: channelX, y: entry.y });
-    waypoints.push({ x: entry.x, y: entry.y });
+  const APPROACH = 24; // px — stays within the row gap
+  if (finalEntryDir === 'N') {
+    const approachY = entry.y - APPROACH;
+    waypoints.push({ x: channelX, y: approachY });
+    waypoints.push({ x: entry.x, y: approachY });
+    waypoints.push(entry);
+  } else if (finalEntryDir === 'S') {
+    const approachY = entry.y + APPROACH;
+    waypoints.push({ x: channelX, y: approachY });
+    waypoints.push({ x: entry.x, y: approachY });
     waypoints.push(entry);
   } else {
     waypoints.push({ x: channelX, y: entry.y });
@@ -1111,8 +1122,15 @@ function predictSkipDirs(
       ? (channels.east.get('main') ?? channels.outerEast)
       : (channels.west.get('main') ?? channels.outerWest);
   } else if (fromSide === 0 && toSide === 0) {
-    exitDir = 'E';
-    channelX = channels.outerEast;
+    // Mirror routeGridSkip: no/false go West, others go East.
+    const cond = (edge.condition ?? '').toLowerCase();
+    if (cond === 'no' || cond === 'false') {
+      exitDir = 'W';
+      channelX = channels.outerWest;
+    } else {
+      exitDir = 'E';
+      channelX = channels.outerEast;
+    }
   } else {
     exitDir = fromSide > 0 ? 'E' : 'W';
     channelX = fromSide > 0 ? channels.outerEast : channels.outerWest;
@@ -1129,7 +1147,7 @@ function predictSkipDirs(
     // Cross-column upward edges (e.g. E1 → main) keep their natural exitDir.
     exitDir = fromSide > 0 ? 'E' : 'W';
   } else if (from.shape !== 'decision'
-    && anyNodeInRowBetween(meta, edge.from, fromRow, exitDir)) {
+    && anyNodeBetweenSourceAndChannel(meta, edge.from, fromRow, exitDir, channelX)) {
     exitDir = goingDown ? 'S' : 'N';
   }
 
@@ -1139,11 +1157,13 @@ function predictSkipDirs(
   else entryDir = exitDir === 'E' ? 'W' : 'E';
 
   // South-entry preference (mirrors routeGridSkip): back-edge arriving
-  // via a channel close to the target center → enter from the bottom.
+  // via a channel that nearly aligns with the target center → enter from the
+  // bottom. Threshold tightened to 25% of width so side entry is used when
+  // the channel is offset from center.
   const usingSouthEntry =
     !goingDown &&
     to.shape !== 'decision' &&
-    Math.abs((to.x ?? 0) - channelX) < (to.width ?? 180);
+    Math.abs((to.x ?? 0) - channelX) < (to.width ?? 180) * 0.25;
   if (usingSouthEntry) entryDir = 'S';
 
   // Mirror the top-entry preference in routeGridSkip.
@@ -1215,15 +1235,21 @@ function cornerWouldPierceRow(
 }
 
 /**
- * Are there any other nodes in `row` lying between the source column
- * and the channel direction? If so, a horizontal segment at this row
- * would pierce them.
+ * Are there any other nodes in `row` lying strictly between the source
+ * column and `channelX`? If so, a horizontal segment at this row would
+ * pierce them before reaching the channel.
+ *
+ * The old version checked "any node in that direction at all" which
+ * returned true even for nodes that lie *past* the channel (e.g. a
+ * yes-branch node in the main column when the channel is the inner
+ * west channel, to the right of the source but left of main).
  */
-function anyNodeInRowBetween(
+function anyNodeBetweenSourceAndChannel(
   meta: GridLayoutMeta,
   sourceId: string,
   row: number,
   direction: CardinalDir,
+  channelX: number,
 ): boolean {
   const r = meta.rows[row];
   if (!r) return false;
@@ -1234,8 +1260,8 @@ function anyNodeInRowBetween(
     if (colId === sourceCol) continue;
     const col = meta.columns.get(colId);
     if (!col) continue;
-    if (direction === 'E' && col.x > sourceColInfo.x) return true;
-    if (direction === 'W' && col.x < sourceColInfo.x) return true;
+    if (direction === 'E' && col.x > sourceColInfo.x && col.x < channelX) return true;
+    if (direction === 'W' && col.x < sourceColInfo.x && col.x > channelX) return true;
   }
   return false;
 }
