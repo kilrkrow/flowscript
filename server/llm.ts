@@ -15,7 +15,7 @@
 
 import type { JsonGraph } from '../src/compiler/json-to-flow.js';
 
-const BASE_URL = process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1';
+const BASE_URL = (process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
 const MODEL    = process.env.LLM_MODEL    ?? 'gpt-4o-mini';
 const API_KEY  = process.env.LLM_API_KEY  ?? '';
 
