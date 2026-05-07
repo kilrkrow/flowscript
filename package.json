@@ -15,6 +15,7 @@
     "build:editor": "bun build src/index.ts --outfile editor/flowscript.js --target=browser --format=esm",
     "build:all": "bun run build && bun run build:cli && bun run build:mcp && bun run build:editor",
     "dev": "bun run src/cli.ts",
+    "dev:server": "bun run server/index.ts",
     "test": "bun test",
     "compile": "bun build --compile src/cli.ts --outfile flowscript"
   },
@@ -22,7 +23,9 @@
   "license": "MIT",
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

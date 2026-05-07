@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowScript — SOP to Diagram</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f0f1a;
+      --surface:  #1a1a2e;
+      --border:   #2e2e4a;
+      --accent:   #7c6af7;
+      --accent2:  #4caf50;
+      --text:     #d4d4e8;
+      --muted:    #6868a0;
+      --error:    #ef5350;
+      --radius:   8px;
+      --font:     'Inter', system-ui, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -0.3px;
+    }
+
+    header .tagline {
+      font-size: 13px;
+      color: var(--muted);
+      margin-left: auto;
+    }
+
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: #2a1f6e;
+      color: var(--accent);
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 0;
+      height: calc(100vh - 61px);
+    }
+
+    .panel {
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .input-panel {
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .output-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0d0d1a;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+
+    .tab {
+      padding: 8px 14px;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Tab panes */
+    .pane { display: none; }
+    .pane.active { display: flex; flex-direction: column; gap: 10px; }
+
+    /* Inputs */
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+
+    input[type="text"],
+    input[type="url"],
+    textarea {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+      resize: vertical;
+    }
+
+    input:focus, textarea:focus { border-color: var(--accent); }
+
+    .file-drop {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      position: relative;
+    }
+
+    .file-drop:hover,
+    .file-drop.over { border-color: var(--accent); color: var(--text); }
+
+    .file-drop input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    }
+
+    .file-drop .file-name {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--accent2);
+    }
+
+    /* Button */
+    .btn {
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      width: 100%;
+    }
+
+    .btn-primary:hover:not(:disabled) { opacity: 0.9; }
+
+    .btn-sm {
+      padding: 6px 14px;
+      font-size: 12px;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Status / error */
+    .status {
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    .status.error { border-color: var(--error); color: var(--error); }
+    .status.ok    { border-color: var(--accent2); color: var(--accent2); }
+    .status.warn  { border-color: #c49b2b; color: #f4d76a; }
+
+    /* Spinner */
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Output */
+    .output-wrap {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 24px;
+    }
+
+    .svg-scroll {
+      width: 100%;
+      flex: 1;
+      overflow: auto;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .svg-scroll svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .output-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .placeholder-icon {
+      font-size: 48px;
+      opacity: 0.3;
+    }
+
+    .model-hint {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>FlowScript</h1>
+  <span class="badge">POC</span>
+  <span class="tagline">SOP → Diagram — self-hosted</span>
+</header>
+
+<main>
+  <!-- ── Left: Input ── -->
+  <div class="panel input-panel">
+
+    <div id="serverStatus" class="status" style="display:none"></div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="url">URL</div>
+      <div class="tab" data-tab="text">Paste Text</div>
+      <div class="tab" data-tab="file">Upload File</div>
+    </div>
+
+    <!-- URL pane -->
+    <div class="pane active" id="pane-url">
+      <div>
+        <label for="urlInput">Public URL (PDF, web page, or plain text)</label>
+        <input type="url" id="urlInput"
+          placeholder="https://example.gov/sop.pdf"
+          autocomplete="off" spellcheck="false" />
+      </div>
+    </div>
+
+    <!-- Text pane -->
+    <div class="pane" id="pane-text">
+      <div>
+        <label for="textInput">Paste SOP or procedure text</label>
+        <textarea id="textInput" rows="12"
+          placeholder="1. Receive alert&#10;2. Verify via CCTV&#10;3. If confirmed, call security..."></textarea>
+      </div>
+    </div>
+
+    <!-- File pane -->
+    <div class="pane" id="pane-file">
+      <label>Upload document (PDF, DOCX, TXT, MD, RTF)</label>
+      <div class="file-drop" id="fileDrop">
+        <input type="file" id="fileInput"
+          accept=".pdf,.docx,.txt,.md,.markdown,.rtf" />
+        <div>Drop file here or click to browse</div>
+        <div class="file-name" id="fileName"></div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="generateBtn" disabled>
+      Generate Diagram
+    </button>
+
+    <div class="model-hint" id="modelHint"></div>
+
+    <div id="errorBox" class="status error" style="display:none"></div>
+
+  </div>
+
+  <!-- ── Right: Output ── -->
+  <div class="panel output-panel" id="outputPanel">
+    <div class="output-wrap" id="placeholder">
+      <div class="placeholder">
+        <div class="placeholder-icon">⬡</div>
+        <div>Paste a URL, text, or file on the left<br>and click <strong>Generate Diagram</strong></div>
+      </div>
+    </div>
+
+    <div class="output-wrap" id="loadingWrap" style="display:none">
+      <div class="spinner"></div>
+      <div style="color:var(--muted);font-size:13px">Extracting process &amp; rendering…</div>
+    </div>
+
+    <div class="output-wrap" id="resultWrap" style="display:none">
+      <div class="svg-scroll" id="svgContainer"></div>
+      <div class="output-actions">
+        <button class="btn btn-sm" id="downloadSvg">Download SVG</button>
+        <button class="btn btn-sm" id="downloadFlow">Download .flow</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let activeTab  = 'url';
+  let lastFlow   = '';
+  let lastSvg    = '';
+  let serverReady = false;
+
+  // ── Server status check ───────────────────────────────────────────────────
+  async function checkStatus() {
+    try {
+      const r = await fetch('/status');
+      const d = await r.json();
+      serverReady = true;
+
+      const el = document.getElementById('serverStatus');
+      const hint = document.getElementById('modelHint');
+      hint.textContent = `Model: ${d.model}`;
+
+      if (!d.apiKeySet) {
+        el.className = 'status warn';
+        el.textContent = '⚠  LLM_API_KEY not set. Set it via environment variable.';
+        el.style.display = '';
+        document.getElementById('generateBtn').disabled = true;
+      } else {
+        el.style.display = 'none';
+        updateGenerateBtn();
+      }
+    } catch {
+      serverReady = false;
+    }
+  }
+
+  checkStatus();
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      activeTab = tab.dataset.tab;
+      document.getElementById(`pane-${activeTab}`).classList.add('active');
+      updateGenerateBtn();
+    });
+  });
+
+  // ── Input events ──────────────────────────────────────────────────────────
+  document.getElementById('urlInput').addEventListener('input', updateGenerateBtn);
+  document.getElementById('textInput').addEventListener('input', updateGenerateBtn);
+
+  document.getElementById('fileInput').addEventListener('change', e => {
+    const f = e.target.files[0];
+    document.getElementById('fileName').textContent = f ? f.name : '';
+    updateGenerateBtn();
+  });
+
+  // Drag-and-drop on file zone
+  const fileDrop = document.getElementById('fileDrop');
+  fileDrop.addEventListener('dragover', e => { e.preventDefault(); fileDrop.classList.add('over'); });
+  fileDrop.addEventListener('dragleave', () => fileDrop.classList.remove('over'));
+  fileDrop.addEventListener('drop', e => {
+    e.preventDefault();
+    fileDrop.classList.remove('over');
+    const f = e.dataTransfer.files[0];
+    if (f) {
+      document.getElementById('fileInput').files = e.dataTransfer.files;
+      document.getElementById('fileName').textContent = f.name;
+      updateGenerateBtn();
+    }
+  });
+
+  function updateGenerateBtn() {
+    let hasInput = false;
+    if (activeTab === 'url')  hasInput = !!document.getElementById('urlInput').value.trim();
+    if (activeTab === 'text') hasInput = !!document.getElementById('textInput').value.trim();
+    if (activeTab === 'file') hasInput = !!document.getElementById('fileInput').files[0];
+    document.getElementById('generateBtn').disabled = !hasInput || !serverReady;
+  }
+
+  // ── Generate ──────────────────────────────────────────────────────────────
+  document.getElementById('generateBtn').addEventListener('click', generate);
+
+  async function generate() {
+    setLoading(true);
+    clearError();
+
+    try {
+      const form = new FormData();
+
+      if (activeTab === 'url') {
+        form.append('url', document.getElementById('urlInput').value.trim());
+      } else if (activeTab === 'text') {
+        form.append('text', document.getElementById('textInput').value.trim());
+      } else {
+        const f = document.getElementById('fileInput').files[0];
+        if (!f) throw new Error('No file selected.');
+        form.append('file', f);
+      }
+
+      const res  = await fetch('/generate', { method: 'POST', body: form });
+      const data = await res.json();
+
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Unknown error');
+
+      lastFlow = data.flow;
+      lastSvg  = data.svg;
+      showResult(data.svg);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────────────
+  function setLoading(on) {
+    document.getElementById('placeholder').style.display   = on ? 'none' : '';
+    document.getElementById('loadingWrap').style.display   = on ? ''     : 'none';
+    document.getElementById('resultWrap').style.display    = 'none';
+    document.getElementById('generateBtn').disabled = on;
+    if (!on) updateGenerateBtn();
+  }
+
+  function showResult(svg) {
+    document.getElementById('placeholder').style.display = 'none';
+    document.getElementById('loadingWrap').style.display = 'none';
+    const wrap = document.getElementById('resultWrap');
+    wrap.style.display = '';
+    document.getElementById('svgContainer').innerHTML = svg;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorBox');
+    el.textContent = '✗ ' + msg;
+    el.style.display = '';
+    document.getElementById('placeholder').style.display = '';
+    document.getElementById('loadingWrap').style.display = 'none';
+    document.getElementById('resultWrap').style.display  = 'none';
+  }
+
+  function clearError() {
+    document.getElementById('errorBox').style.display = 'none';
+  }
+
+  // ── Downloads ──────────────────────────────────────────────────────────────
+  document.getElementById('downloadSvg').addEventListener('click', () => {
+    download('diagram.svg', lastSvg, 'image/svg+xml');
+  });
+
+  document.getElementById('downloadFlow').addEventListener('click', () => {
+    download('diagram.flow', lastFlow, 'text/plain');
+  });
+
+  function download(filename, content, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], { type }));
+    a.download = filename;
+    a.click();
+  }
+</script>
+</body>
+</html>
