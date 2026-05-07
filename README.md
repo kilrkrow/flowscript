@@ -533,4 +533,4 @@ svg.querySelectorAll('.fs-node').forEach(g => {
 
 ## License
 
-MIT
+AGL
