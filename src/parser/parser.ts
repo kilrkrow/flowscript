@@ -473,22 +473,25 @@ class Parser {
       let condition: string | undefined;
       let label: string | undefined;
 
-      // Detect "condition:" pattern — only if TEXT is a short word (≤10 chars)
-      // and is followed by COLON and then more content.
-      // This avoids misinterpreting long node labels like "Enter Email & Password"
-      // as conditions.
-      const saved = this.pos;
-      if (this.peek().type === 'TEXT') {
-        const maybeCondition = this.peek().value;
-        const isShortCondition = maybeCondition.length <= 10 && !this.nodeExistsByLabel(maybeCondition);
+      // Unambiguous condition: 'single-quoted' form — no colon required.
+      if (this.peek().type === 'CONDITION') {
+        condition = this.advance().value;
+      } else {
+        // Legacy heuristic: short TEXT (≤10 chars) followed by COLON.
+        // Avoids misinterpreting long labels like "Enter Email & Password".
+        const saved = this.pos;
+        if (this.peek().type === 'TEXT') {
+          const maybeCondition = this.peek().value;
+          const isShortCondition = maybeCondition.length <= 10 && !this.nodeExistsByLabel(maybeCondition);
 
-        if (isShortCondition) {
-          this.advance();
-          if (this.peek().type === 'COLON') {
-            this.advance(); // consume :
-            condition = maybeCondition;
-          } else {
-            this.pos = saved; // back up
+          if (isShortCondition) {
+            this.advance();
+            if (this.peek().type === 'COLON') {
+              this.advance(); // consume :
+              condition = maybeCondition;
+            } else {
+              this.pos = saved; // back up
+            }
           }
         }
       }
@@ -575,11 +578,13 @@ class Parser {
         const arrowTok = this.advance(); // consume -> or ~>
         const isRetry = arrowTok.type === 'RETRY_ARROW';
 
-        // Condition: "yes:", "no:", etc.
+        // Condition: 'single-quoted' (unambiguous) or legacy short-word: form.
         let condition: string | undefined;
         let label: string | undefined;
 
-        if (this.peek().type === 'TEXT') {
+        if (this.peek().type === 'CONDITION') {
+          condition = this.advance().value;
+        } else if (this.peek().type === 'TEXT') {
           const maybeCondition = this.peek().value;
           const savedInner = this.pos;
           this.advance();

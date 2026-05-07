@@ -23,7 +23,7 @@ A diagram-as-code DSL that renders clean, Visio-quality flowcharts from human-re
 - **Readable DSL** — indentation-driven, keyword-heavy syntax anyone can write
 - **11 shape types** — start, end, decision, process, subprocess, I/O, data, circle, note, manual, delay
 - **Orthogonal edge routing** — right-angle connections with rounded corners
-- **Automatic layout** — Dagre-powered node positioning, no manual coordinates
+- **Automatic layout** — dual-engine positioning: structured grid (TB default) or Dagre, no manual coordinates
 - **Themes** — clean default theme, extensible theme system
 - **4 flow directions** — top-to-bottom, bottom-to-top, left-to-right, right-to-left
 - **Edge labels** — named connections with quoted labels on any edge
@@ -150,17 +150,19 @@ Step One -> Step Two: "label on edge"
 
 ```
 #decision Approved?
-  -> yes: Send Confirmation
-  -> no: Send Rejection
+  -> 'Yes' Send Confirmation
+  -> 'No'  Send Rejection
 ```
+
+Single-quoted conditions are unambiguous — no colon, any length, any content. The legacy colon form (`-> yes: Target`) is still accepted for backward compatibility.
 
 **Multi-way branching:**
 
 ```
 #decision Priority?
-  -> P1: Page On-Call
-  -> P2: Assign Team Lead
-  -> P3: Add to Backlog
+  -> 'P1' Page On-Call
+  -> 'P2' Assign Team Lead
+  -> 'P3' Add to Backlog
 ```
 
 **Loop-backs** — reference an existing node by name:
@@ -273,8 +275,8 @@ those paths use dagre.
 - Two-level branch nesting at most. A decision deep inside a side branch
   places sub-branches one column further out but doesn't reflow the
   parent grid.
-- Multi-way (>3) decisions get one E and one W column; surplus branches
-  stack onto W.
+- Multi-way (>3) decisions get side columns; the engine balances East/West
+  adaptively but very wide fans can still crowd.
 - This is a flow-aware *node placer*, not a constraint solver.
   Pathologically dense flows may still produce overlap; the existing
   Visio-style line-jumps post-pass is the final fallback.
@@ -328,8 +330,11 @@ flowscript/
 │   │   ├── lexer.ts          # Tokenizer
 │   │   └── parser.ts         # Recursive descent parser
 │   ├── layout/
-│   │   ├── dagre-layout.ts   # Dagre layout adapter
-│   │   └── router.ts         # Edge routing (orthogonal, bezier, polyline)
+│   │   ├── dagre-layout.ts   # Layout entry point; delegates to grid or dagre
+│   │   ├── grid-layout.ts    # Structured grid engine (TB default)
+│   │   ├── router.ts         # Edge routing (orthogonal, bezier, polyline)
+│   │   ├── port-reservation.ts # Cardinal port assignment (N/S/E/W)
+│   │   └── shape-ports.ts    # Port geometry per shape type
 │   ├── render/
 │   │   ├── svg.ts            # SVG renderer
 │   │   ├── svg-tree.ts       # Virtual SVG tree
@@ -355,7 +360,7 @@ Source Text → Parse → Layout → Route → Render
 ```
 
 1. **Parse** — Lexer tokenizes, recursive descent parser builds an AST (`FlowDocument` with nodes, edges, groups, directives)
-2. **Layout** — Dagre assigns x/y coordinates to every node
+2. **Layout** — Grid engine (TB default) or Dagre assigns x/y coordinates to every node; grid layout uses named columns and outer routing channels
 3. **Route** — Edge router computes connection paths (orthogonal with rounded corners by default)
 4. **Render** — SVG renderer walks the AST + routes and produces a virtual SVG tree, then serializes to string
 

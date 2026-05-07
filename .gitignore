@@ -3,3 +3,4 @@ dist/
 test/output/
 *.tgz
 bun.lockb
+package-lock.json

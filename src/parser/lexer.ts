@@ -17,6 +17,7 @@ export type TokenType =
   | 'LBRACE'              // {
   | 'RBRACE'              // }
   | 'STRING'              // "quoted string"
+  | 'CONDITION'           // 'single-quoted condition' (unambiguous branch label)
   | 'TEXT'                // unquoted text (node label, etc.)
   | 'NEWLINE'             // line break
   | 'INDENT'              // leading whitespace at start of line
@@ -228,6 +229,21 @@ function tokenizeLine(line: string, lineNum: number, baseCol: number, tokens: To
       const str = line.slice(strStart, pos);
       if (pos < line.length) pos++; // skip closing quote
       tokens.push({ type: 'STRING', value: str, line: lineNum, col: c });
+      continue;
+    }
+
+    // Single-quoted condition: 'Yes', 'No', 'P1', etc.
+    // Unambiguous condition delimiter — no colon required after it.
+    if (peek() === "'") {
+      pos++; // skip opening quote
+      const strStart = pos;
+      while (pos < line.length && line[pos] !== "'") {
+        if (line[pos] === '\\') pos++; // skip escaped char
+        pos++;
+      }
+      const str = line.slice(strStart, pos);
+      if (pos < line.length) pos++; // skip closing quote
+      tokens.push({ type: 'CONDITION', value: str, line: lineNum, col: c });
       continue;
     }
 
