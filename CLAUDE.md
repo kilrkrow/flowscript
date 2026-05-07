@@ -1,0 +1,100 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## Commands
+
+```bash
+bun test                                      # run all tests
+bun test test/grid-layout.test.ts             # run a single test file
+bun test --watch                              # watch mode
+bun run build                                 # compile to dist/
+npx tsx scripts/gen-svg.ts <fixture>          # generate SVG from test/fixtures/<fixture>.flow
+npx tsx scripts/gen-svg.ts learning-flow      # most complete stress fixture
+```
+
+`bun` is the runtime and test runner. If `bun` is not in PATH, fall back to `npx tsx` for one-off scripts (see `scripts/gen-svg.ts`). Do not use `npx tsx` for tests — they use `bun:test` imports.
+
+Test fixtures live in `test/fixtures/*.flow`. Generated SVGs go to `test/output/`.
+
+---
+
+## Architecture
+
+**Pipeline** (in order): `parse → layout → route → renderSVG`
+
+```
+src/parser/      lexer.ts + parser.ts → FlowDocument (AST)
+src/layout/      dagre-layout.ts      → node x/y positions + GridLayoutMeta
+                 grid-layout.ts       → paper-cutout placement engine (TB flows)
+                 router.ts            → RouteResult per edge (waypoints + pathData)
+                 port-reservation.ts  → cardinal port assignment (N/S/E/W)
+                 shape-ports.ts       → port geometry per shape
+src/render/      svg.ts               → SVG string from positioned doc + routes
+                 svg-tree.ts          → virtual element builder / serializer
+                 shapes/index.ts      → per-shape SVG renderers
+src/themes/      clean.ts             → stroke, fill, font tokens
+```
+
+**Public API** (`src/index.ts`): `parse`, `layout`, `route`, `renderSVG`, or the one-shot `render(source)`.
+
+### Layout engine — two modes
+
+`dagre-layout.ts` is the entry point for both modes.
+
+- **Grid layout** (default for TB flows without swimlanes): `grid-layout.ts` places nodes into `(row, column)` cells on an infinite grid. Columns are named `main`, `W1`, `W2`, `E1`, `E2`, … Side column assignment is adaptive — `no`/`false` branches go West by convention, but `adaptiveSide()` flips to East when West is more than 2× loaded. `finalizeColumns()` converts column names to x coordinates.
+
+- **Dagre layout** (swimlanes, groups, `@layout dagre`, non-TB direction): delegates to `@dagrejs/dagre`.
+
+`getGridMeta(doc)` returns the `GridLayoutMeta` if grid layout ran, or `undefined` for dagre.
+
+### Router — three edge classes
+
+1. **Local edges** (`routeGridLocal`): same-column forward edges within one row step. L-shaped or straight.
+2. **Skip edges** (`routeGridSkip`): back-edges, cross-column forward edges, multi-row same-column edges. Route via a side channel (`channels.outerWest`, `channels.outerEast`, `channels.west/east` maps). Channel x coordinates are computed in `buildGridChannels()`.
+3. **Cardinal edges** (`routeCardinal`): swimlane documents.
+
+`classifySkipEdges()` in `grid-layout.ts` decides which class each edge gets. Key rules:
+- `toRow < fromRow` → always skip (back-edge).
+- Same column, gap ≥ 2 with intermediate occupants → skip.
+- Cross-column forward edge where target column already has a node in the source row → skip (prevents L-route piercing that node).
+
+**Port reservation** (`port-reservation.ts`): two-pass system assigns cardinal exit ports then entry ports. Diamonds exit from tips; rectangles from face centers. The reservation prevents two edges sharing the same port on the same face.
+
+**Line jumps**: `applyLineJumps()` post-processes all routes, detecting perpendicular crossings and rewriting the yielding edge's path data with a small arc bump (`waypointsToRoundedPathWithJumps`). Enabled by default; disable with `@line-jumps off`.
+
+### Key invariants to preserve
+
+- `anyNodeBetweenSourceAndChannel` checks only between `source.x` and `channelX`, not to infinity. Do not widen this check.
+- `usingSouthEntry` threshold is `< width * 0.25`. It must stay tight or paths enter nodes from wrong faces.
+- `usingTopEntry` fires when `toRow > fromRow` (not `+ 1`) — catches adjacent-row cross-column forward edges.
+- `calculateBounds` in `svg.ts` walks route waypoints as well as node bounding boxes. Outer-channel paths extend beyond nodes.
+
+---
+
+## Behavioral Guidelines
+
+*(From [forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills))*
+
+### Think Before Coding
+
+Before implementing: state assumptions explicitly, surface tradeoffs, ask when uncertain. If multiple interpretations exist, present them — don't pick silently.
+
+### Simplicity First
+
+Minimum code that solves the problem. No speculative abstractions, no unrequested flexibility. If a change exceeds ~50 lines and a simpler path exists, name it first.
+
+### Surgical Changes
+
+Touch only what the request requires. Don't improve adjacent code, reformat, or refactor things that aren't broken. Match existing style. If unrelated dead code is noticed, mention it — don't delete it. Every changed line should trace directly to the user's request.
+
+### Goal-Driven Execution
+
+For non-trivial changes, state a brief plan with verifiable steps before coding:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+```
+Run `bun test` after each meaningful change. Use `npx tsx scripts/gen-svg.ts learning-flow` to visually verify layout changes — the test suite checks geometric invariants but cannot catch visual regressions.
