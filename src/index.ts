@@ -18,6 +18,8 @@ export { layoutDocument as layout } from './layout/dagre-layout.js';
 export { routeEdges as route } from './layout/router.js';
 export type { RouteResult } from './layout/router.js';
 export { renderSVG } from './render/svg.js';
+export { jsonToFlow } from './compiler/json-to-flow.js';
+export type { JsonGraph, JsonNode, JsonEdge } from './compiler/json-to-flow.js';
 export { cleanTheme } from './themes/clean.js';
 export { cleanDarkTheme } from './themes/clean-dark.js';
 export { resolveTheme, listThemes } from './themes/index.js';
