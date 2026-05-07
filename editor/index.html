@@ -273,8 +273,8 @@ html, body {
     <option value="">Examples...</option>
     <option value="registration">User Registration</option>
     <option value="security" selected>Security Incident (New)</option>
-    <option value="benchmark">Textografo Benchmark (Grid)</option>
-    <option value="benchmark-dagre">Textografo Benchmark (Dagre)</option>
+    <option value="benchmark">SaaS Onboarding (Grid)</option>
+    <option value="benchmark-dagre">SaaS Onboarding (Dagre)</option>
     <option value="minimal">Minimal</option>
   </select>
   <div class="spacer"></div>
@@ -488,112 +488,106 @@ Close Ticket -> Resolved`,
   Try Again -> World`,
 
   benchmark: `---
-title: Learning Textografo Benchmark
+title: SaaS Onboarding Flow
 ---
 
 @theme clean
 @direction TB
 @layout grid
 
-#start Sign-up
-Go through Tutorial
+#start Create Account
+Complete Profile
 
-#decision Tutorial Done?
-  -> yes: Create Flowcharts
-  -> "No - Let's go step by step": Create a new flowchart
+#decision Profile complete?
+  -> 'Yes' Connect Integrations
+  -> 'No' Complete Profile
 
-Create Flowcharts
+Connect Integrations
 
-#decision All Fine?
-  -> yes: #circle Congrats! Level 1
-  -> "No - Check This": Create a new flowchart
+#decision Integrations working?
+  -> 'Yes' #circle Milestone: Setup Done
+  -> 'No' Review Integration Guide
 
-#circle Congrats! Level 1
+#circle Milestone: Setup Done
 
-#decision Ready for next level?
-  -> yes: Create a cross-functional flowchart
-  -> No: Click on the PLAY to check your work
+#decision Ready to invite team?
+  -> 'Yes' Invite Team Members
+  -> 'No' Explore Solo
 
-Create a cross-functional flowchart
-Create a subprocess
-Create a bridge
-Connect Distant Shape
+Invite Team Members
+Run Team Walkthrough
 
-#decision Done?
-  -> yes: Click on PLAY to check your work
-  ~> no: Create a cross-functional flowchart
+#decision Team onboarded?
+  -> 'Yes' Go Live
+  ~> 'No' Run Team Walkthrough
 
-Click on PLAY to check your work
-#circle Congrats! Level 2
-#end You're done...for the moment :)
+Go Live
+#circle Milestone: Live
+#end Onboarding Complete
 
-// The "No" branch from "Tutorial Done?" or "All Fine?"
-Create a new flowchart
-Create a decision bridge
-Add a label to a connector
-Zoom on a particular part of diagram
+// Remediation path
+Review Integration Guide
+Check API Credentials
+Retry Connection
 
-#decision Done?
-  -> yes: #circle Congrats! Level 1
-  ~> no: Create a new flowchart
+#decision Connection successful?
+  -> 'Yes' #circle Milestone: Setup Done
+  ~> 'No' Review Integration Guide
 
-// Exit path for "No" on "Ready for next level?"
-Click on the PLAY to check your work
-#end "Have a rest and come back later! :)"`,
+// Solo exploration path
+Explore Solo
+#end Start Free Trial`,
 
   'benchmark-dagre': `---
-title: Learning Textografo Benchmark (Dagre)
+title: SaaS Onboarding Flow (Dagre)
 ---
 
 @theme clean
 @direction TB
 @layout dagre
 
-#start Sign-up
-Go through Tutorial
+#start Create Account
+Complete Profile
 
-#decision Tutorial Done?
-  -> yes: Create Flowcharts
-  -> "No - Let's go step by step": Create a new flowchart
+#decision Profile complete?
+  -> 'Yes' Connect Integrations
+  -> 'No' Complete Profile
 
-Create Flowcharts
+Connect Integrations
 
-#decision All Fine?
-  -> yes: #circle Congrats! Level 1
-  -> "No - Check This": Create a new flowchart
+#decision Integrations working?
+  -> 'Yes' #circle Milestone: Setup Done
+  -> 'No' Review Integration Guide
 
-#circle Congrats! Level 1
+#circle Milestone: Setup Done
 
-#decision Ready for next level?
-  -> yes: Create a cross-functional flowchart
-  -> No: Click on the PLAY to check your work
+#decision Ready to invite team?
+  -> 'Yes' Invite Team Members
+  -> 'No' Explore Solo
 
-Create a cross-functional flowchart
-Create a subprocess
-Create a bridge
-Connect Distant Shape
+Invite Team Members
+Run Team Walkthrough
 
-#decision Done?
-  -> yes: Click on PLAY to check your work
-  ~> no: Create a cross-functional flowchart
+#decision Team onboarded?
+  -> 'Yes' Go Live
+  ~> 'No' Run Team Walkthrough
 
-Click on PLAY to check your work
-#circle Congrats! Level 2
-#end "You're done...for the moment :)"
+Go Live
+#circle Milestone: Live
+#end Onboarding Complete
 
-// The "No" branch from "Tutorial Done?" or "All Fine?"
-Create a new flowchart
-Create a decision bridge
-Add a label to a connector
-Zoom on a particular part of diagram
+// Remediation path
+Review Integration Guide
+Check API Credentials
+Retry Connection
 
-#decision Done?
-  -> yes: #circle Congrats! Level 1
-  ~> no: Create a new flowchart
+#decision Connection successful?
+  -> 'Yes' #circle Milestone: Setup Done
+  ~> 'No' Review Integration Guide
 
-// Exit path for "No" on "Ready for next level?"
-Click on the PLAY to check your work
-#end "Have a rest and come back later! :)"`
+// Solo exploration path
+Explore Solo
+#end Start Free Trial`
 };
 
 // ============================================================
