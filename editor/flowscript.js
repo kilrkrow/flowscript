@@ -188,6 +188,20 @@ function tokenizeLine(line, lineNum, baseCol, tokens) {
       tokens.push({ type: "STRING", value: str, line: lineNum, col: c });
       continue;
     }
+    if (peek() === "'") {
+      pos++;
+      const strStart = pos;
+      while (pos < line.length && line[pos] !== "'") {
+        if (line[pos] === "\\")
+          pos++;
+        pos++;
+      }
+      const str = line.slice(strStart, pos);
+      if (pos < line.length)
+        pos++;
+      tokens.push({ type: "CONDITION", value: str, line: lineNum, col: c });
+      continue;
+    }
     const text = readTextSegment(line, pos, lineNum);
     if (text.value) {
       tokens.push({ type: "TEXT", value: text.value, line: lineNum, col: c });
@@ -465,10 +479,26 @@ class Parser {
     const shapeToken = this.advance();
     const shape = shapeToken.value;
     let label = "";
-    if (this.peek().type === "TEXT") {
+    if (this.peek().type === "STRING") {
       label = this.advance().value;
-    } else if (this.peek().type === "STRING") {
+    } else if (this.peek().type === "TEXT") {
       label = this.advance().value;
+      while (this.peek().type === "COLON") {
+        const savedPos = this.pos;
+        this.advance();
+        if (this.peek().type === "TEXT") {
+          label += ": " + this.advance().value;
+        } else {
+          this.pos = savedPos;
+          break;
+        }
+        if (this.isArrow(this.peek().type)) {
+          const lastColon = label.lastIndexOf(": ");
+          label = label.slice(0, lastColon);
+          this.pos = savedPos;
+          break;
+        }
+      }
     }
     if (!label) {
       label = shape.charAt(0).toUpperCase() + shape.slice(1);
@@ -552,17 +582,21 @@ class Parser {
       const isRetry = arrowTok.type === "RETRY_ARROW";
       let condition;
       let label;
-      const saved = this.pos;
-      if (this.peek().type === "TEXT") {
-        const maybeCondition = this.peek().value;
-        const isShortCondition = maybeCondition.length <= 10 && !this.nodeExistsByLabel(maybeCondition);
-        if (isShortCondition) {
-          this.advance();
-          if (this.peek().type === "COLON") {
+      if (this.peek().type === "CONDITION") {
+        condition = this.advance().value;
+      } else {
+        const saved = this.pos;
+        if (this.peek().type === "TEXT") {
+          const maybeCondition = this.peek().value;
+          const isShortCondition = maybeCondition.length <= 10 && !this.nodeExistsByLabel(maybeCondition);
+          if (isShortCondition) {
             this.advance();
-            condition = maybeCondition;
-          } else {
-            this.pos = saved;
+            if (this.peek().type === "COLON") {
+              this.advance();
+              condition = maybeCondition;
+            } else {
+              this.pos = saved;
+            }
           }
         }
       }
@@ -635,7 +669,9 @@ class Parser {
         const isRetry = arrowTok.type === "RETRY_ARROW";
         let condition;
         let label;
-        if (this.peek().type === "TEXT") {
+        if (this.peek().type === "CONDITION") {
+          condition = this.advance().value;
+        } else if (this.peek().type === "TEXT") {
           const maybeCondition = this.peek().value;
           const savedInner = this.pos;
           this.advance();
@@ -2591,12 +2627,12 @@ function gridLayout(doc) {
       continue;
     if (placed.has(id))
       continue;
-    const row = Math.max(rowHint, nextFreeRow(rows, column));
+    const row = nextFreeRow(rows, column, rowHint);
     placeNode(rows, columns, node, row, column);
     placed.set(id, { row, column });
     const outs = out.get(id) ?? [];
     if (node.shape === "decision" && outs.length >= 2) {
-      enqueueDecisionBranches(outs, id, row, column, queue, visiting, doc, columns);
+      enqueueDecisionBranches(outs, id, row, column, queue, visiting, doc, columns, rows);
     } else {
       for (const e of outs) {
         if (visiting.has(e.to))
@@ -2697,14 +2733,30 @@ function placeNode(rows, columns, node, row, columnId) {
     col.width = Math.max(col.width, node.width ?? DEFAULT_NODE_WIDTH);
   }
 }
-function nextFreeRow(rows, column) {
-  for (let i = rows.length - 1;i >= 0; i--) {
-    if (rows[i].nodes.has(column))
-      return i + 1;
+function nextFreeRow(rows, column, rowHint = 0) {
+  let candidate = rowHint;
+  while (candidate < rows.length && rows[candidate]?.nodes.has(column)) {
+    candidate++;
   }
-  return rows.length === 0 ? 0 : 0;
+  return candidate;
 }
-function enqueueDecisionBranches(outs, sourceId, sourceRow, sourceColumn, queue, visiting, doc, columns) {
+function sideLoad(rows, side) {
+  let n = 0;
+  for (const row of rows) {
+    for (const colId of row.nodes.keys()) {
+      if (side === "E" ? colId.startsWith("E") : colId.startsWith("W"))
+        n++;
+    }
+  }
+  return n;
+}
+function adaptiveSide(preferred, rows) {
+  const alt = preferred === "W" ? "E" : "W";
+  const prefLoad = sideLoad(rows, preferred);
+  const altLoad = sideLoad(rows, alt);
+  return prefLoad > altLoad * 2 + 2 ? alt : preferred;
+}
+function enqueueDecisionBranches(outs, sourceId, sourceRow, sourceColumn, queue, visiting, doc, columns, rows) {
   const buckets = [];
   let mainAssigned = false;
   for (const e of outs) {
@@ -2725,14 +2777,25 @@ function enqueueDecisionBranches(outs, sourceId, sourceRow, sourceColumn, queue,
       continue;
     const cond = (b.edge.condition ?? "").toLowerCase();
     if (cond === "no" || cond === "false") {
-      b.side = "E";
+      b.side = adaptiveSide("W", rows);
     } else {
-      b.side = nextSideIdx % 2 === 0 ? "E" : "W";
+      const preferred = nextSideIdx % 2 === 0 ? "W" : "E";
+      b.side = adaptiveSide(preferred, rows);
       nextSideIdx++;
     }
   }
   const eUsed = buckets.filter((b) => b.side === "E").length;
   const wUsed = buckets.filter((b) => b.side === "W").length;
+  if (wUsed > 1 && eUsed === 0) {
+    let flipped = false;
+    for (const b of buckets) {
+      const c = (b.edge.condition ?? "").toLowerCase();
+      if (b.side === "W" && !flipped && c !== "no" && c !== "false") {
+        b.side = "E";
+        flipped = true;
+      }
+    }
+  }
   if (eUsed > 1 && wUsed === 0) {
     let flipped = false;
     for (const b of buckets) {
@@ -2742,15 +2805,19 @@ function enqueueDecisionBranches(outs, sourceId, sourceRow, sourceColumn, queue,
       }
     }
   }
+  const mainBucket = buckets.find((b) => b.main);
+  const mainIsBackEdge = !!mainBucket && visiting.has(mainBucket.edge.to);
+  const newSideBranches = buckets.filter((b) => !b.main && !visiting.has(b.edge.to));
+  const continueInSameCol = mainIsBackEdge && newSideBranches.length === 1;
   for (const b of buckets) {
     if (visiting.has(b.edge.to)) {
       continue;
     }
     visiting.add(b.edge.to);
-    if (b.main) {
+    if (b.main || continueInSameCol) {
       queue.push({ id: b.edge.to, column: sourceColumn, rowHint: sourceRow + 1 });
     } else {
-      const sideCol = ensureSideColumn(columns, sourceColumn, b.side ?? "E");
+      const sideCol = ensureSideColumn(columns, sourceColumn, b.side ?? "W");
       queue.push({ id: b.edge.to, column: sideCol, rowHint: sourceRow + 1 });
     }
   }
@@ -2815,6 +2882,10 @@ function classifySkipEdges(doc, placed, rows) {
       continue;
     if (e.from === e.to)
       continue;
+    if (b.row < a.row) {
+      skip.add(`${i}:${e.from}->${e.to}`);
+      continue;
+    }
     const sameColumn = a.column === b.column;
     const rowGap = Math.abs(a.row - b.row);
     if (sameColumn && rowGap >= 2) {
@@ -2836,6 +2907,9 @@ function classifySkipEdges(doc, placed, rows) {
         if (Math.abs(hi - lo) >= 2) {
           skip.add(`${i}:${e.from}->${e.to}`);
         }
+      }
+      if (b.row > a.row && rows[a.row]?.nodes.has(b.column)) {
+        skip.add(`${i}:${e.from}->${e.to}`);
       }
     }
   }
@@ -3636,7 +3710,8 @@ function routeGridSkip(edge, from, to, cornerRadius, meta, channels, _doc, edgeI
   const toCol = meta.nodeColumn.get(edge.to) ?? "main";
   const fromColInfo = meta.columns.get(fromCol);
   const toColInfo = meta.columns.get(toCol);
-  const decisionExit = from.shape === "decision" ? edge.condition === "no" || edge.condition === "false" ? "E" : null : null;
+  const condLc = (edge.condition ?? "").toLowerCase();
+  const decisionExit = from.shape === "decision" ? condLc === "no" || condLc === "false" ? "W" : null : null;
   let exitDir;
   let channelX;
   const fromSide = fromColInfo.side;
@@ -3656,9 +3731,9 @@ function routeGridSkip(edge, from, to, cornerRadius, meta, channels, _doc, edgeI
       channelX = channels.west.get("main") ?? channels.outerWest;
     }
   } else if (fromSide === 0 && toSide === 0) {
-    if (decisionExit === "E") {
-      exitDir = "E";
-      channelX = channels.outerEast;
+    if (decisionExit === "W") {
+      exitDir = "W";
+      channelX = channels.outerWest;
     } else {
       exitDir = "E";
       channelX = channels.outerEast;
@@ -3680,9 +3755,12 @@ function routeGridSkip(edge, from, to, cornerRadius, meta, channels, _doc, edgeI
   } else {
     entryDir = exitDir === "E" ? "W" : "E";
   }
-  const usingTopEntry = toRow > fromRow + 1 && Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
   const goingDown = (to.y ?? 0) > (from.y ?? 0);
-  const useVerticalExit = anyNodeInRowBetween(meta, edge.from, fromRow, exitDir);
+  const usingSouthEntry = !goingDown && to.shape !== "decision" && Math.abs((to.x ?? 0) - channelX) < (to.width ?? 180) * 0.25;
+  if (usingSouthEntry)
+    entryDir = "S";
+  const usingTopEntry = !usingSouthEntry && toRow > fromRow && Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
+  const useVerticalExit = from.shape !== "decision" && anyNodeBetweenSourceAndChannel(meta, edge.from, fromRow, exitDir, channelX);
   let exitFinalDir = exitDir;
   if (useVerticalExit) {
     exitFinalDir = goingDown ? "S" : "N";
@@ -3706,8 +3784,36 @@ function routeGridSkip(edge, from, to, cornerRadius, meta, channels, _doc, edgeI
   if (entrySpread)
     entry = entrySpread;
   exitFinalDir = resolvedExitDir;
-  const finalEntryDir = resolvedEntryDir;
-  const wouldPierceHorizontal = (exitFinalDir === "E" || exitFinalDir === "W") && anyNodeInRowBetween(meta, edge.from, fromRow, exitFinalDir);
+  let finalEntryDir = resolvedEntryDir;
+  if (fromSide === 0 && toSide === 0 && exitFinalDir !== exitDir) {
+    channelX = exitFinalDir === "E" ? channels.outerEast + spreadIdx * SPREAD : channels.outerWest - spreadIdx * SPREAD;
+    if (channelX > (to.x ?? 0))
+      entryDir = "E";
+    else if (channelX < (to.x ?? 0))
+      entryDir = "W";
+    else
+      entryDir = exitFinalDir === "E" ? "W" : "E";
+    if (usingSouthEntry)
+      entryDir = "S";
+    if (usingTopEntry)
+      entryDir = "N";
+    finalEntryDir = entryDir;
+    entry = portForReserved(to, finalEntryDir, null, "entry", finalEntryDir);
+  }
+  {
+    const nodeLeft = (to.x ?? 0) - (to.width ?? 180) / 2;
+    const nodeRight = (to.x ?? 0) + (to.width ?? 180) / 2;
+    const channelLeftOfNode = channelX < nodeLeft;
+    const channelRightOfNode = channelX > nodeRight;
+    if (finalEntryDir === "E" && channelLeftOfNode) {
+      finalEntryDir = goingDown ? "N" : "S";
+      entry = portForReserved(to, finalEntryDir, null, "entry", finalEntryDir);
+    } else if (finalEntryDir === "W" && channelRightOfNode) {
+      finalEntryDir = goingDown ? "N" : "S";
+      entry = portForReserved(to, finalEntryDir, null, "entry", finalEntryDir);
+    }
+  }
+  const wouldPierceHorizontal = (exitFinalDir === "E" || exitFinalDir === "W") && anyNodeBetweenSourceAndChannel(meta, edge.from, fromRow, exitFinalDir, channelX);
   const waypoints = [exit];
   if ((exitFinalDir === "E" || exitFinalDir === "W") && !wouldPierceHorizontal) {
     waypoints.push({ x: channelX, y: exit.y });
@@ -3716,9 +3822,16 @@ function routeGridSkip(edge, from, to, cornerRadius, meta, channels, _doc, edgeI
     waypoints.push({ x: exit.x, y: gapY });
     waypoints.push({ x: channelX, y: gapY });
   }
-  if (finalEntryDir === "N" || finalEntryDir === "S") {
-    waypoints.push({ x: channelX, y: entry.y });
-    waypoints.push({ x: entry.x, y: entry.y });
+  const APPROACH = 24;
+  if (finalEntryDir === "N") {
+    const approachY = entry.y - APPROACH;
+    waypoints.push({ x: channelX, y: approachY });
+    waypoints.push({ x: entry.x, y: approachY });
+    waypoints.push(entry);
+  } else if (finalEntryDir === "S") {
+    const approachY = entry.y + APPROACH;
+    waypoints.push({ x: channelX, y: approachY });
+    waypoints.push({ x: entry.x, y: approachY });
     waypoints.push(entry);
   } else {
     waypoints.push({ x: channelX, y: entry.y });
@@ -3758,7 +3871,7 @@ function buildGridReservation(doc, meta, channels, decisionExitDir) {
     const exitPrefs = rankAround(dirs.exitDir, exitNear);
     const entryPrefs = rankAround(dirs.entryDir, entryNear);
     const exitPin = overrideExit && fromNode.shape === "decision" ? overrideExit : fromNode.shape === "decision" ? dirs.exitDir : undefined;
-    const entryPin = toNode.shape === "decision" ? dirs.entryDir : undefined;
+    const entryPin = toNode.shape === "decision" ? dirs.entryDir : isSkip && dirs.entryDir === "S" ? "S" : undefined;
     prefs.push({
       edgeKey: ek,
       edge,
@@ -3843,8 +3956,14 @@ function predictSkipDirs(edge, from, to, meta, channels) {
     exitDir = toSide > 0 ? "E" : "W";
     channelX = toSide > 0 ? channels.east.get("main") ?? channels.outerEast : channels.west.get("main") ?? channels.outerWest;
   } else if (fromSide === 0 && toSide === 0) {
-    exitDir = "E";
-    channelX = channels.outerEast;
+    const cond = (edge.condition ?? "").toLowerCase();
+    if (cond === "no" || cond === "false") {
+      exitDir = "W";
+      channelX = channels.outerWest;
+    } else {
+      exitDir = "E";
+      channelX = channels.outerEast;
+    }
   } else {
     exitDir = fromSide > 0 ? "E" : "W";
     channelX = fromSide > 0 ? channels.outerEast : channels.outerWest;
@@ -3852,9 +3971,9 @@ function predictSkipDirs(edge, from, to, meta, channels) {
   const fromRow = meta.nodeRow.get(edge.from) ?? 0;
   const toRow = meta.nodeRow.get(edge.to) ?? 0;
   const goingDown = toRow > fromRow;
-  if (toRow < fromRow) {
+  if (toRow < fromRow && fromSide === toSide) {
     exitDir = fromSide > 0 ? "E" : "W";
-  } else if (anyNodeInRowBetween(meta, edge.from, fromRow, exitDir)) {
+  } else if (from.shape !== "decision" && anyNodeBetweenSourceAndChannel(meta, edge.from, fromRow, exitDir, channelX)) {
     exitDir = goingDown ? "S" : "N";
   }
   let entryDir;
@@ -3864,7 +3983,10 @@ function predictSkipDirs(edge, from, to, meta, channels) {
     entryDir = "W";
   else
     entryDir = exitDir === "E" ? "W" : "E";
-  const usingTopEntry = toRow > fromRow + 1 && Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
+  const usingSouthEntry = !goingDown && to.shape !== "decision" && Math.abs((to.x ?? 0) - channelX) < (to.width ?? 180) * 0.25;
+  if (usingSouthEntry)
+    entryDir = "S";
+  const usingTopEntry = !usingSouthEntry && toRow > fromRow && Math.abs((to.x ?? 0) - channelX) > (to.width ?? 180) / 2 + 24;
   if (usingTopEntry)
     entryDir = "N";
   return { exitDir, entryDir };
@@ -3903,7 +4025,7 @@ function cornerWouldPierceRow(meta, sourceId, sourceRow, exit, entry, horizontal
   }
   return false;
 }
-function anyNodeInRowBetween(meta, sourceId, row, direction) {
+function anyNodeBetweenSourceAndChannel(meta, sourceId, row, direction, channelX) {
   const r = meta.rows[row];
   if (!r)
     return false;
@@ -3917,9 +4039,9 @@ function anyNodeInRowBetween(meta, sourceId, row, direction) {
     const col = meta.columns.get(colId);
     if (!col)
       continue;
-    if (direction === "E" && col.x > sourceColInfo.x)
+    if (direction === "E" && col.x > sourceColInfo.x && col.x < channelX)
       return true;
-    if (direction === "W" && col.x < sourceColInfo.x)
+    if (direction === "W" && col.x < sourceColInfo.x && col.x > channelX)
       return true;
   }
   return false;
@@ -3948,15 +4070,26 @@ function assignDecisionExits(doc) {
     const used = new Set;
     const preferOrder = ["S", "E", "W", "N"];
     for (const { idx, edge } of branches) {
-      if (edge.condition === "yes" || edge.condition === "true") {
-        out.set(edgeId(idx, edge), "S");
-        used.add("S");
+      const lc = (edge.condition ?? "").toLowerCase();
+      if (lc === "yes" || lc === "true") {
+        const to = doc.nodes.get(edge.to);
+        const dy = (to?.y ?? 0) - (from.y ?? 0);
+        if (dy >= 0) {
+          out.set(edgeId(idx, edge), "S");
+          used.add("S");
+        } else {
+          const dx = (to?.x ?? 0) - (from.x ?? 0);
+          const pick = dx <= 0 ? "W" : "E";
+          out.set(edgeId(idx, edge), pick);
+          used.add(pick);
+        }
       }
     }
     for (const { idx, edge } of branches) {
       if (out.has(edgeId(idx, edge)))
         continue;
-      if (edge.condition === "no" || edge.condition === "false") {
+      const lc = (edge.condition ?? "").toLowerCase();
+      if (lc === "no" || lc === "false") {
         const to = doc.nodes.get(edge.to);
         const dx = (to?.x ?? 0) - (from.x ?? 0);
         let pick = dx >= 0 ? "E" : "W";
@@ -4658,7 +4791,7 @@ function wrapWithShadow(child) {
 // src/render/svg.ts
 function renderSVG(doc, routes, options) {
   const { theme, padding = 40 } = options;
-  const bounds = calculateBounds(doc, padding);
+  const bounds = calculateBounds(doc, routes, padding);
   const width = bounds.maxX - bounds.minX;
   const height = bounds.maxY - bounds.minY;
   const root = el("svg", {
@@ -4897,7 +5030,7 @@ function renderEdges(doc, routes, theme) {
         width: lblWidth,
         height: 20,
         rx: 4,
-        fill: "#ffffff",
+        fill: theme.background,
         stroke: "none",
         opacity: 1
       }));
@@ -4929,8 +5062,16 @@ function renderNodes(doc, theme) {
   }
   return el("g", { class: "fs-nodes" }, ...nodeEls);
 }
-function calculateBounds(doc, padding) {
+function calculateBounds(doc, routes, padding) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [, route] of routes) {
+    for (const wp of route.waypoints ?? []) {
+      minX = Math.min(minX, wp.x);
+      minY = Math.min(minY, wp.y);
+      maxX = Math.max(maxX, wp.x);
+      maxY = Math.max(maxY, wp.y);
+    }
+  }
   for (const [_2, node] of doc.nodes) {
     if (node.x === undefined || node.y === undefined)
       continue;
@@ -5027,21 +5168,88 @@ var cleanTheme = {
     labelFont: { family: "'Inter', system-ui, sans-serif", size: 12, color: "#334155", weight: 700 }
   }
 };
+// src/themes/clean-dark.ts
+var cleanDarkTheme = {
+  name: "clean-dark",
+  background: "#1a1a2e",
+  node: {
+    fill: "#252538",
+    stroke: "#484870",
+    strokeWidth: 1.2,
+    borderRadius: 6,
+    shadow: true,
+    font: { family: "'Inter', system-ui, sans-serif", size: 13, color: "#e8e6ff", weight: 500 }
+  },
+  edge: {
+    stroke: "#8080a8",
+    strokeWidth: 1.5,
+    arrowSize: 10,
+    labelFont: { family: "'Inter', system-ui, sans-serif", size: 11, color: "#a0a0c8", weight: 500 },
+    semanticStrokes: {
+      "fs-edge-yes": "#4caf50",
+      "fs-edge-no": "#ef5350",
+      "fs-edge-retry": "#9c84e8"
+    }
+  },
+  shapes: {
+    start: { fill: "#1b2e1b", stroke: "#4caf50", textColor: "#7dd87d" },
+    end: { fill: "#1e2428", stroke: "#78909c", textColor: "#b0bec5" },
+    decision: { fill: "#2b2410", stroke: "#c49b2b", textColor: "#f4d76a" },
+    process: { fill: "#252538", stroke: "#484870", textColor: "#e8e6ff" },
+    subprocess: { fill: "#2a2a42", stroke: "#6666a0" },
+    io: { fill: "#102030", stroke: "#42a5f5", textColor: "#90caf9" },
+    data: { fill: "#18183a", stroke: "#5c6bc0", textColor: "#9fa8da" },
+    circle: { fill: "#28102e", stroke: "#ab47bc", textColor: "#ce93d8" },
+    note: { fill: "#2a2600", stroke: "#fdd835", textColor: "#fff176" },
+    manual: { fill: "#2c1515", stroke: "#ef5350", textColor: "#ef9a9a" },
+    delay: { fill: "#26103a", stroke: "#9c27b0", textColor: "#ce93d8" }
+  },
+  group: {
+    fills: ["#1a2040", "#142216", "#1e1432", "#2c2410"],
+    strokes: ["#3060a0", "#306040", "#6040a0", "#908020"],
+    headerFills: ["#1e2850", "#182a1a", "#22183a", "#342c12"],
+    labelFont: { family: "'Inter', system-ui, sans-serif", size: 12, color: "#7eb3f0", weight: 700 }
+  },
+  lane: {
+    fills: ["#1a1e24", "#241e14", "#162216", "#1e1430", "#24161a"],
+    strokes: ["#3a4a60", "#5c4820", "#285040", "#3a2060", "#5c2030"],
+    headerFills: ["#1e2530", "#2e2212", "#182a16", "#221630", "#2a181e"],
+    headerWidth: 120,
+    dividerStroke: "#3a3a50",
+    dividerDash: "4,3",
+    labelFont: { family: "'Inter', system-ui, sans-serif", size: 12, color: "#a0b0c0", weight: 700 }
+  }
+};
+// src/themes/index.ts
+var registry = {
+  clean: cleanTheme,
+  "clean-dark": cleanDarkTheme
+};
+function resolveTheme(name) {
+  return registry[name.toLowerCase().trim()] ?? cleanTheme;
+}
+function listThemes() {
+  return Object.keys(registry);
+}
 // src/index.ts
 function render(source, options = {}) {
   const doc = parse(source);
   layoutDocument(doc);
   const routes = routeEdges(doc);
+  const theme = options.theme ?? resolveTheme(getDirective(doc, "theme", "clean"));
   return renderSVG(doc, routes, {
-    theme: options.theme ?? cleanTheme,
+    theme,
     padding: options.padding ?? 40
   });
 }
 export {
   routeEdges as route,
+  resolveTheme,
   renderSVG,
   render,
   parse,
+  listThemes,
   layoutDocument as layout,
-  cleanTheme
+  cleanTheme,
+  cleanDarkTheme
 };
