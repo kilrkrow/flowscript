@@ -519,6 +519,7 @@ svg.querySelectorAll('.fs-node').forEach(g => {
 - [x] Relative-position-aware port scoring (clean L-shapes for diagonal source→decision routes)
 - [x] Visio-style line jumps for unavoidable orthogonal crossings (`@line-jumps off` to disable)
 - [x] Structured grid layout for TB (paper-cutout footprints, side-column branch placement, outer-channel skip routing)
+- [ ] Swimlane v2: inline cross-lane edges + `@lane-direction TB` for row-based orientation
 - [ ] Per-edge `jump` override / theme-level hop styling (radius, shape, color)
 - [ ] `#io` parallelogram custom ports (currently falls back to rect)
 - [ ] `opentype.js` text measurement (replacing character-width heuristic)
