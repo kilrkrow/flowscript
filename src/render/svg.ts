@@ -299,12 +299,13 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
       const lx = route.labelPosition.x;
       const ly = route.labelPosition.y;
 
-      // Background rect for label readability
+      // Background rect for label readability — use theme background so it
+      // blends into both light and dark diagram backgrounds.
       const lblWidth = labelText.length * 7.5 + 12;
       edgeGroup.push(el('rect', {
         x: lx - lblWidth / 2, y: ly - 10,
         width: lblWidth, height: 20,
-        rx: 4, fill: '#ffffff', stroke: 'none', opacity: 1,
+        rx: 4, fill: theme.background, stroke: 'none', opacity: 1,
       }));
       edgeGroup.push(el('text', {
         x: lx, y: ly,

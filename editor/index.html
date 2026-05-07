@@ -20,7 +20,7 @@
   --text-faint: #55555a;
   --accent: #20808D;
   --accent-hover: #28969e;
-  --preview-bg: #ffffff;
+  --preview-bg: #1a1a2e;
   --toolbar-h: 48px;
 }
 
@@ -316,6 +316,11 @@ html, body {
     <option value="benchmark-dagre">SaaS Onboarding (Dagre)</option>
     <option value="minimal">Minimal</option>
   </select>
+  <div class="separator"></div>
+  <select id="diagramTheme" title="Diagram theme">
+    <option value="clean">Diagram: Light</option>
+    <option value="clean-dark" selected>Diagram: Dark</option>
+  </select>
   <div class="spacer"></div>
   <span class="status" id="status"></span>
   <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">🌙</button>
@@ -344,7 +349,7 @@ html, body {
 
 <!-- FlowScript bundle -->
 <script type="module">
-import { render } from './flowscript.js';
+import { render, resolveTheme } from './flowscript.js';
 
 // ============================================================
 // Example diagrams
@@ -637,6 +642,9 @@ let editor = null;
 let currentZoom = 1;
 let renderTimer = null;
 let lastSvg = '';
+// Diagram theme — independent of shell light/dark toggle.
+// Defaults to match the initial shell theme (set by initTheme before Monaco loads).
+let diagramThemeName = localStorage.getItem('fs-diagram-theme') ?? 'clean-dark';
 
 // ============================================================
 // Monaco setup
@@ -780,7 +788,7 @@ function doRender() {
 
   const t0 = performance.now();
   try {
-    const svg = render(source);
+    const svg = render(source, { theme: resolveTheme(diagramThemeName) });
     const elapsed = (performance.now() - t0).toFixed(1);
     lastSvg = svg;
 
@@ -967,6 +975,15 @@ document.addEventListener('mouseup', () => {
 // ============================================================
 const themeToggle = document.getElementById('themeToggle');
 
+const diagramThemeSelect = document.getElementById('diagramTheme');
+
+function applyDiagramTheme(name) {
+  diagramThemeName = name;
+  diagramThemeSelect.value = name;
+  localStorage.setItem('fs-diagram-theme', name);
+  doRender();
+}
+
 function applyTheme(theme, monacoInstance) {
   document.documentElement.dataset.theme = theme;
   themeToggle.textContent = theme === 'light' ? '🌙' : '☀︎';
@@ -977,6 +994,10 @@ function applyTheme(theme, monacoInstance) {
     );
   }
   localStorage.setItem('fs-theme', theme);
+  // Sync diagram theme with shell theme (unless user has manually overridden it)
+  if (!localStorage.getItem('fs-diagram-theme-manual')) {
+    applyDiagramTheme(theme === 'light' ? 'clean' : 'clean-dark');
+  }
 }
 
 // Initialise from localStorage or system preference, but defer until Monaco ready.
@@ -990,12 +1011,23 @@ function initTheme() {
   document.documentElement.dataset.theme = initial;
   themeToggle.textContent = initial === 'light' ? '🌙' : '☀︎';
   themeToggle.title = initial === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+  // Sync diagram theme dropdown to saved or shell-derived value
+  diagramThemeSelect.value = diagramThemeName;
 }
 initTheme();
 
 themeToggle.addEventListener('click', () => {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  // Clear manual override so the toggle re-links shell and diagram themes
+  localStorage.removeItem('fs-diagram-theme-manual');
   applyTheme(next, window._monaco);
+});
+
+// Diagram theme dropdown — user can decouple from shell theme
+diagramThemeSelect.addEventListener('change', (e) => {
+  // Mark as manually overridden so the shell toggle stops auto-syncing
+  localStorage.setItem('fs-diagram-theme-manual', '1');
+  applyDiagramTheme(e.target.value);
 });
 </script>
 
