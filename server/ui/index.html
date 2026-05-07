@@ -472,9 +472,12 @@
 
   // ── UI helpers ────────────────────────────────────────────────────────────
   function setLoading(on) {
-    document.getElementById('placeholder').style.display   = on ? 'none' : '';
-    document.getElementById('loadingWrap').style.display   = on ? ''     : 'none';
-    document.getElementById('resultWrap').style.display    = 'none';
+    if (on) {
+      // Entering loading state: hide everything except the spinner
+      document.getElementById('placeholder').style.display = 'none';
+      document.getElementById('resultWrap').style.display  = 'none';
+    }
+    document.getElementById('loadingWrap').style.display = on ? '' : 'none';
     document.getElementById('generateBtn').disabled = on;
     if (!on) updateGenerateBtn();
   }
