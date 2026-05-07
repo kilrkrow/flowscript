@@ -3,10 +3,6 @@
  * Returns plain text suitable for LLM processing.
  */
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
-
 // ── URL ──────────────────────────────────────────────────────────────────────
 
 export async function extractFromUrl(url: string): Promise<string> {
@@ -53,8 +49,10 @@ export async function extractFromFile(
 // ── Format handlers ───────────────────────────────────────────────────────────
 
 async function extractFromPdf(buffer: Buffer): Promise<string> {
-  const result = await pdfParse(buffer);
-  return result.text.trim();
+  const { extractText } = await import('unpdf');
+  const uint8 = new Uint8Array(buffer);
+  const { text } = await extractText(uint8, { mergePages: true });
+  return (Array.isArray(text) ? text.join('\n') : text).trim();
 }
 
 async function extractFromDocx(buffer: Buffer): Promise<string> {

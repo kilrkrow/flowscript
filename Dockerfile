@@ -5,6 +5,9 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
+# Bust cache when source changes (pass --build-arg CACHEBUST=$(date +%s))
+ARG CACHEBUST=1
+
 # Copy source
 COPY src/       ./src/
 COPY server/    ./server/
