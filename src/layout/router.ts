@@ -736,8 +736,9 @@ function routeGridSkip(
   // side column, exit out away from main; otherwise pick the side
   // toward which the target lies (or the suggested exit direction
   // from a multi-branch decision pre-pass).
+  const condLc = (edge.condition ?? '').toLowerCase();
   const decisionExit = from.shape === 'decision'
-    ? edge.condition === 'no' || edge.condition === 'false' ? 'W' : null
+    ? condLc === 'no' || condLc === 'false' ? 'W' : null
     : null;
 
   // Determine the channel x and exit/entry sides.
@@ -875,6 +876,26 @@ function routeGridSkip(
   // reservation; update them so the path geometry matches.
   exitFinalDir = resolvedExitDir;
   let finalEntryDir: CardinalDir = resolvedEntryDir;
+
+  // Sync channelX to the reservation-adjusted exit direction.
+  // When the reservation flips the exit side (e.g. a multi-branch decision
+  // where assignDecisionExits pins 'E' but the local decisionExit heuristic
+  // had set 'W'), the channel must follow or the path will U-turn.
+  // Only re-derive for main→main edges (side-column edges use column-relative
+  // channel positions that don't depend on E/W symmetrically).
+  if (fromSide === 0 && toSide === 0 && exitFinalDir !== exitDir) {
+    channelX = exitFinalDir === 'E'
+      ? channels.outerEast + spreadIdx * SPREAD
+      : channels.outerWest - spreadIdx * SPREAD;
+    // Re-derive entryDir now that channelX changed.
+    if (channelX > (to.x ?? 0)) entryDir = 'E';
+    else if (channelX < (to.x ?? 0)) entryDir = 'W';
+    else entryDir = exitFinalDir === 'E' ? 'W' : 'E';
+    if (usingSouthEntry) entryDir = 'S';
+    if (usingTopEntry) entryDir = 'N';
+    finalEntryDir = entryDir;
+    entry = portForReserved(to, finalEntryDir, null, 'entry', finalEntryDir);
+  }
 
   // Sanity-check: if port reservation assigned E/W entry but the channel
   // is on the *opposite* side of the node, a horizontal segment from the
@@ -1344,7 +1365,8 @@ function assignDecisionExits(doc: FlowDocument): Map<string, CardinalDir> {
     // Back-edges (target above source) must not pin to S — instead
     // use the side that faces the target so the path routes correctly.
     for (const { idx, edge } of branches) {
-      if (edge.condition === 'yes' || edge.condition === 'true') {
+      const lc = (edge.condition ?? '').toLowerCase();
+      if (lc === 'yes' || lc === 'true') {
         const to = doc.nodes.get(edge.to);
         const dy = (to?.y ?? 0) - (from.y ?? 0);
         if (dy >= 0) {
@@ -1365,7 +1387,8 @@ function assignDecisionExits(doc: FlowDocument): Map<string, CardinalDir> {
     // the target.
     for (const { idx, edge } of branches) {
       if (out.has(edgeId(idx, edge))) continue;
-      if (edge.condition === 'no' || edge.condition === 'false') {
+      const lc = (edge.condition ?? '').toLowerCase();
+      if (lc === 'no' || lc === 'false') {
         const to = doc.nodes.get(edge.to);
         const dx = (to?.x ?? 0) - (from.x ?? 0);
         let pick: CardinalDir = dx >= 0 ? 'E' : 'W';

@@ -1,0 +1,25 @@
+// Regression: decisions with back-edges (retry/yes-to-done) should exit
+// from E/W tips, not N/S. Conditions stored with capital letters ('Yes', 'No')
+// from single-quote syntax must be matched case-insensitively.
+
+#start Start
+Review CCTV footage.
+
+#decision Is there a security incident?
+  -> 'Yes' Call Police
+  -> 'No' Document
+
+Call Police
+Observe until police arrive
+
+#decision Police arrived?
+  -> 'Yes' Monitor until resolved.
+  -> 'No' Observe until police arrive
+
+Monitor until resolved.
+
+#decision Resolved?
+  -> 'Yes' #end Done
+  -> 'No' Monitor until resolved.
+
+Document -> #end Done
