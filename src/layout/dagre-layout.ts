@@ -57,8 +57,19 @@ export function layoutDocument(doc: FlowDocument): void {
   // its own footprint sizing and placement; dagre is bypassed.
   if (shouldUseGridLayout(doc)) {
     const meta = gridLayout(doc);
-    gridMetaForDoc.set(doc, meta);
-    return;
+
+    // Auto-fallback: if the grid engine needed more than one level of side
+    // columns (i.e., W2/E2 or beyond were created), the canvas becomes
+    // excessively wide (column explosion). Re-run with dagre in that case.
+    // Authors can pin to grid with `@layout grid` to override.
+    const hasColumnExplosion = getDirective(doc, 'layout', '') !== 'grid' &&
+      [...meta.columns.values()].some(c => c.level > 1);
+
+    if (!hasColumnExplosion) {
+      gridMetaForDoc.set(doc, meta);
+      return;
+    }
+    // Column explosion detected — fall through to dagre.
   }
   // Otherwise, fall back to dagre.
   gridMetaForDoc.delete(doc);
