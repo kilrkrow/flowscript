@@ -330,12 +330,35 @@ class Parser {
     const shapeToken = this.advance();
     const shape = shapeToken.value as ShapeType;
 
-    // Read label
+    // Read label — consume TEXT tokens and any embedded "word: word" colons
+    // so that labels like "#circle Milestone: Setup Done" work without quoting.
+    // Stops when it sees an arrow, style block, NEWLINE, or EOF.
     let label = '';
-    if (this.peek().type === 'TEXT') {
+    if (this.peek().type === 'STRING') {
       label = this.advance().value;
-    } else if (this.peek().type === 'STRING') {
+    } else if (this.peek().type === 'TEXT') {
       label = this.advance().value;
+      // Consume "colon + more text" as part of the label as long as no arrow
+      // or style block follows. This lets "#circle Foo: Bar Baz" parse correctly.
+      while (this.peek().type === 'COLON') {
+        const savedPos = this.pos;
+        this.advance(); // consume ':'
+        if (this.peek().type === 'TEXT') {
+          label += ': ' + this.advance().value;
+        } else {
+          // Nothing useful after colon — put it back and stop
+          this.pos = savedPos;
+          break;
+        }
+        // Stop if an arrow is next (the colon was an edge-label separator)
+        if (this.isArrow(this.peek().type)) {
+          // Strip the ": tail" we just consumed — it belongs to the edge
+          const lastColon = label.lastIndexOf(': ');
+          label = label.slice(0, lastColon);
+          this.pos = savedPos;
+          break;
+        }
+      }
     }
 
     if (!label) {
