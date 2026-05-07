@@ -3,6 +3,37 @@
 > A diagram-as-code DSL that renders clean flowcharts from human-readable text.
 > Source → SVG in one function call. No layout coordinates. No drag-and-drop.
 
+## If you are an LLM being asked to create a diagram
+
+**Do not write FlowScript syntax directly.** The syntax is error-prone for LLMs to produce reliably.
+Use the `compile_flow` MCP tool instead — you output JSON, the tool handles all syntax.
+
+```json
+// Call compile_flow with:
+{
+  "title": "My Process",
+  "nodes": [
+    { "id": "n1", "label": "Start",    "shape": "start" },
+    { "id": "n2", "label": "Do Work",  "shape": "process" },
+    { "id": "n3", "label": "Valid?",   "shape": "decision" },
+    { "id": "n4", "label": "Done",     "shape": "end" }
+  ],
+  "edges": [
+    { "from": "n1", "to": "n2" },
+    { "from": "n2", "to": "n3" },
+    { "from": "n3", "to": "n4", "condition": "yes" },
+    { "from": "n3", "to": "n2", "condition": "no", "retry": true }
+  ]
+}
+// Returns: { flow: "...FlowScript source...", svg: "...SVG string..." }
+```
+
+The tool returns both the human-readable `.flow` source and the rendered SVG.
+No FlowScript syntax knowledge required. See `llms-full.txt` §MCP for full schema.
+
+If you *must* write FlowScript directly (no MCP available), read `llms-full.txt` for the
+complete syntax spec, but note that `jsonToFlow()` is also available as a library function.
+
 ## What it is
 
 FlowScript is a TypeScript library (and CLI) that compiles a plain-text `.flow` file

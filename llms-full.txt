@@ -32,6 +32,111 @@ const svg = renderSVG(doc, routes, { theme: cleanTheme });
 
 ---
 
+## MCP integration — preferred path for LLMs
+
+**If you are an LLM agent with MCP tool access, use `compile_flow` instead of writing FlowScript syntax.**
+FlowScript syntax has subtle rules (implicit chaining, decision indentation, back-edge detection)
+that are easy to get wrong. The `compile_flow` tool accepts a plain JSON graph and compiles it
+deterministically — no syntax knowledge required.
+
+### compile_flow tool
+
+Input schema:
+```json
+{
+  "title":     "string (optional)",
+  "subtitle":  "string (optional)",
+  "theme":     "\"clean\" | \"clean-dark\" (optional, default clean)",
+  "direction": "\"TB\" | \"LR\" | \"BT\" | \"RL\" (optional, default TB)",
+  "nodes": [
+    {
+      "id":    "string — unique identifier, e.g. \"n1\"",
+      "label": "string — display text inside the shape",
+      "shape": "\"start\" | \"end\" | \"process\" | \"decision\" | \"subprocess\" | \"io\" | \"data\" | \"note\" | \"manual\" | \"delay\" | \"circle\""
+    }
+  ],
+  "edges": [
+    {
+      "from":      "string — source node id",
+      "to":        "string — target node id",
+      "condition": "string — branch label, e.g. \"yes\", \"no\", \"P1\" (required for decision branches)",
+      "label":     "string — optional edge label",
+      "retry":     "boolean — true for loop-back / retry edges (renders dashed)"
+    }
+  ]
+}
+```
+
+Returns `{ flow: string, svg: string }` — the compiled .flow source and the rendered SVG.
+
+Shape guide:
+- Use `"start"` for the first node, `"end"` for terminal nodes.
+- Use `"decision"` for any branching condition (yes/no or multi-way).
+- Use `"process"` (or omit shape) for everything else.
+- Use `"retry": true` on any edge that loops back to an earlier node.
+
+### Example: two-way decision with retry loop
+
+```json
+{
+  "title": "Form Submission",
+  "nodes": [
+    { "id": "n1", "label": "Start",          "shape": "start" },
+    { "id": "n2", "label": "Validate Input", "shape": "process" },
+    { "id": "n3", "label": "Valid?",         "shape": "decision" },
+    { "id": "n4", "label": "Save Record",    "shape": "process" },
+    { "id": "n5", "label": "Done",           "shape": "end" }
+  ],
+  "edges": [
+    { "from": "n1", "to": "n2" },
+    { "from": "n2", "to": "n3" },
+    { "from": "n3", "to": "n4", "condition": "yes" },
+    { "from": "n3", "to": "n2", "condition": "no",  "retry": true },
+    { "from": "n4", "to": "n5" }
+  ]
+}
+```
+
+### render_flow tool
+
+Renders an existing FlowScript source string to SVG. Use this when you already have a .flow source.
+
+```json
+{ "source": "...FlowScript text...", "theme": "clean-dark" }
+```
+
+Returns the SVG string directly.
+
+### jsonToFlow() — library function
+
+If you're using FlowScript as a library (not via MCP), `jsonToFlow()` is the same compiler:
+
+```typescript
+import { jsonToFlow, render } from 'flowscript';
+import type { JsonGraph } from 'flowscript';
+
+const graph: JsonGraph = {
+  title: 'My Process',
+  nodes: [
+    { id: 'n1', label: 'Start',   shape: 'start' },
+    { id: 'n2', label: 'Step A',  shape: 'process' },
+    { id: 'n3', label: 'Done',    shape: 'end' },
+  ],
+  edges: [
+    { from: 'n1', to: 'n2' },
+    { from: 'n2', to: 'n3' },
+  ],
+};
+
+const flow = jsonToFlow(graph);   // → FlowScript source string
+const svg  = render(flow);        // → SVG string
+```
+
+`jsonToFlow()` throws on invalid input (empty nodes, duplicate IDs, dangling edge references,
+blank labels). All errors include a descriptive message.
+
+---
+
 ## File structure
 
 A .flow file has three optional sections in this order:
