@@ -10,8 +10,10 @@
   },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target=node",
+    "build:cli": "bun build src/cli.ts --outdir dist --target=node",
+    "build:mcp": "bun build src/mcp-server.ts --outdir dist --target=node",
     "build:editor": "bun build src/index.ts --outfile editor/flowscript.js --target=browser --format=esm",
-    "build:all": "bun run build && bun run build:editor",
+    "build:all": "bun run build && bun run build:cli && bun run build:mcp && bun run build:editor",
     "dev": "bun run src/cli.ts",
     "test": "bun test",
     "compile": "bun build --compile src/cli.ts --outfile flowscript"
@@ -19,7 +21,8 @@
   "keywords": ["diagram", "flowchart", "svg", "dsl"],
   "license": "MIT",
   "dependencies": {
-    "@dagrejs/dagre": "^3.0.0"
+    "@dagrejs/dagre": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

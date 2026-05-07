@@ -22,6 +22,7 @@ Usage:
   flowscript render <input.flow> -o <output.svg>   Render a diagram
   flowscript render --stdin -o <output.svg>         Read from stdin
   flowscript lint <input.flow>                      Validate syntax
+  flowscript mcp                                    Start MCP server (stdio)
   flowscript --help                                 Show this help
 
 Options:
@@ -32,6 +33,7 @@ Options:
 Examples:
   flowscript render flow.fs -o diagram.svg
   echo "#start A\\n  B\\n  #end C" | flowscript render --stdin -o out.svg
+  flowscript mcp                                    # for Claude Desktop integration
 `);
 }
 
@@ -47,6 +49,13 @@ function main(): void {
     cmdRender();
   } else if (command === 'lint') {
     cmdLint();
+  } else if (command === 'mcp') {
+    // Delegate to the MCP server entry point (dynamic import keeps the
+    // MCP SDK out of the critical path for render/lint commands).
+    import('./mcp-server.js').catch(err => {
+      console.error('Failed to start MCP server:', err.message);
+      process.exit(1);
+    });
   } else {
     console.error(`Unknown command: ${command}`);
     usage();
