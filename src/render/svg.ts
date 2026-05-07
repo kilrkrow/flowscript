@@ -22,8 +22,10 @@ export interface RenderOptions {
 export function renderSVG(doc: FlowDocument, routes: Map<string, RouteResult>, options: RenderOptions): string {
   const { theme, padding = 40 } = options;
 
-  // Calculate viewBox from node positions
-  const bounds = calculateBounds(doc, padding);
+  // Calculate viewBox from node positions AND route waypoints so that
+  // outer-channel paths (which extend beyond node bounding boxes) are
+  // not clipped.
+  const bounds = calculateBounds(doc, routes, padding);
   const width = bounds.maxX - bounds.minX;
   const height = bounds.maxY - bounds.minY;
 
@@ -258,9 +260,9 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
     // theme overrides target yes/no/retry edges with CSS.
     const cond = (edge.condition ?? '').toLowerCase();
     const semanticClass =
-      isDashed                                 ? 'fs-edge-retry'
+      cond === 'no'  || cond === 'false'     ? 'fs-edge-no'
       : cond === 'yes' || cond === 'true'      ? 'fs-edge-yes'
-      : cond === 'no'  || cond === 'false'     ? 'fs-edge-no'
+      : isDashed                               ? 'fs-edge-retry'
       : '';
 
     // Theme color override for the path stroke when a semantic class
@@ -298,11 +300,11 @@ function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme:
       const ly = route.labelPosition.y;
 
       // Background rect for label readability
-      const lblWidth = labelText.length * 7 + 12;
+      const lblWidth = labelText.length * 7.5 + 12;
       edgeGroup.push(el('rect', {
-        x: lx - lblWidth / 2, y: ly - 9,
-        width: lblWidth, height: 18,
-        rx: 4, fill: '#ffffff', stroke: 'none', opacity: 0.9,
+        x: lx - lblWidth / 2, y: ly - 10,
+        width: lblWidth, height: 20,
+        rx: 4, fill: '#ffffff', stroke: 'none', opacity: 1,
       }));
       edgeGroup.push(el('text', {
         x: lx, y: ly,
@@ -337,8 +339,18 @@ function renderNodes(doc: FlowDocument, theme: Theme): SvgElement {
 
 // --- Bounds calculation ---
 
-function calculateBounds(doc: FlowDocument, padding: number) {
+function calculateBounds(doc: FlowDocument, routes: Map<string, RouteResult>, padding: number) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  // Include route waypoints so outer-channel paths don't get clipped.
+  for (const [, route] of routes) {
+    for (const wp of route.waypoints ?? []) {
+      minX = Math.min(minX, wp.x);
+      minY = Math.min(minY, wp.y);
+      maxX = Math.max(maxX, wp.x);
+      maxY = Math.max(maxY, wp.y);
+    }
+  }
 
   for (const [_, node] of doc.nodes) {
     if (node.x === undefined || node.y === undefined) continue;

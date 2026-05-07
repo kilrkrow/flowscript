@@ -33,6 +33,7 @@ export interface FlowNode {
   id: string;
   label: string;
   shape: ShapeType;
+  line?: number; // Source line number for editor focus
   style?: StyleOverrides;
   group?: string;
   lane?: string; // lane ID this node belongs to

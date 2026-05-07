@@ -200,6 +200,67 @@ html, body {
   background: var(--surface-2);
   color: var(--text);
 }
+
+/* ---- Step-through / Highlight states ---- */
+.fs-node {
+  transition: opacity 0.3s, transform 0.3s;
+  cursor: pointer;
+}
+.fs-edge {
+  transition: opacity 0.3s;
+}
+
+/* Dim everything when something is active */
+.fs-diagram.has-active .fs-node { opacity: 0.25; }
+.fs-diagram.has-active .fs-edge { opacity: 0.15; }
+
+/* Active node - full focus */
+.fs-node.active {
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+.fs-node.active rect,
+.fs-node.active polygon,
+.fs-node.active circle,
+.fs-node.active path {
+  stroke: var(--accent) !important;
+  stroke-width: 3px !important;
+}
+
+/* Visited (predecessors) */
+.fs-node.visited {
+  opacity: 0.8 !important;
+}
+.fs-node.visited rect,
+.fs-node.visited polygon,
+.fs-node.visited circle,
+.fs-node.visited path {
+  stroke: #4f98a3 !important;
+  fill: #f0f9fa !important;
+}
+.fs-edge.visited .fs-edge-path {
+  stroke-width: 2px !important;
+  opacity: 0.8;
+}
+
+/* Upcoming (successors) */
+.fs-node.upcoming {
+  opacity: 0.7 !important;
+}
+.fs-node.upcoming rect,
+.fs-node.upcoming polygon,
+.fs-node.upcoming circle,
+.fs-node.upcoming path {
+  stroke-dasharray: 4 2 !important;
+}
+.fs-edge.active .fs-edge-path {
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 3px var(--accent));
+}
+.fs-edge.upcoming .fs-edge-path {
+  stroke-dasharray: 4,2 !important;
+  stroke-width: 2.5px !important;
+}
 </style>
 </head>
 <body>
@@ -210,10 +271,10 @@ html, body {
   <div class="separator"></div>
   <select id="examples">
     <option value="">Examples...</option>
-    <option value="registration" selected>User Registration</option>
-    <option value="deploy">CI/CD Pipeline</option>
-    <option value="support">Support Ticket</option>
-    <option value="swimlanes">Swimlanes</option>
+    <option value="registration">User Registration</option>
+    <option value="security" selected>Security Incident (New)</option>
+    <option value="benchmark">Textografo Benchmark (Grid)</option>
+    <option value="benchmark-dagre">Textografo Benchmark (Dagre)</option>
     <option value="minimal">Minimal</option>
   </select>
   <div class="spacer"></div>
@@ -276,6 +337,37 @@ title: User Registration Flow
   Activate Account
     Send Welcome Email
     #end Registration Complete`,
+
+  security: `---
+title: Security Incident Workflow
+---
+
+@theme clean
+@direction TB
+@layout grid
+
+#start Start
+Review CCTV footage. 
+
+#decision Is there a security incident?
+  -> Yes: Call Police
+  -> No: Document
+
+Call Police
+Observe until police arrive
+
+#decision Police arrived?
+  -> Yes: Monitor until resolved.
+  ~> No: Observe until police arrive
+
+Monitor until resolved.
+
+#decision Resolved?
+  -> Yes: #end Done
+  ~> No: Monitor until resolved.
+
+Document
+-> Done`,
 
   deploy: `---
 title: CI/CD Deployment Pipeline
@@ -393,7 +485,115 @@ Close Ticket -> Resolved`,
   #decision Like it?
     -> yes: #end Ship It
     -> no: Try Again
-  Try Again -> World`
+  Try Again -> World`,
+
+  benchmark: `---
+title: Learning Textografo Benchmark
+---
+
+@theme clean
+@direction TB
+@layout grid
+
+#start Sign-up
+Go through Tutorial
+
+#decision Tutorial Done?
+  -> yes: Create Flowcharts
+  -> "No - Let's go step by step": Create a new flowchart
+
+Create Flowcharts
+
+#decision All Fine?
+  -> yes: #circle Congrats! Level 1
+  -> "No - Check This": Create a new flowchart
+
+#circle Congrats! Level 1
+
+#decision Ready for next level?
+  -> yes: Create a cross-functional flowchart
+  -> No: Click on the PLAY to check your work
+
+Create a cross-functional flowchart
+Create a subprocess
+Create a bridge
+Connect Distant Shape
+
+#decision Done?
+  -> yes: Click on PLAY to check your work
+  ~> no: Create a cross-functional flowchart
+
+Click on PLAY to check your work
+#circle Congrats! Level 2
+#end You're done...for the moment :)
+
+// The "No" branch from "Tutorial Done?" or "All Fine?"
+Create a new flowchart
+Create a decision bridge
+Add a label to a connector
+Zoom on a particular part of diagram
+
+#decision Done?
+  -> yes: #circle Congrats! Level 1
+  ~> no: Create a new flowchart
+
+// Exit path for "No" on "Ready for next level?"
+Click on the PLAY to check your work
+#end "Have a rest and come back later! :)"`,
+
+  'benchmark-dagre': `---
+title: Learning Textografo Benchmark (Dagre)
+---
+
+@theme clean
+@direction TB
+@layout dagre
+
+#start Sign-up
+Go through Tutorial
+
+#decision Tutorial Done?
+  -> yes: Create Flowcharts
+  -> "No - Let's go step by step": Create a new flowchart
+
+Create Flowcharts
+
+#decision All Fine?
+  -> yes: #circle Congrats! Level 1
+  -> "No - Check This": Create a new flowchart
+
+#circle Congrats! Level 1
+
+#decision Ready for next level?
+  -> yes: Create a cross-functional flowchart
+  -> No: Click on the PLAY to check your work
+
+Create a cross-functional flowchart
+Create a subprocess
+Create a bridge
+Connect Distant Shape
+
+#decision Done?
+  -> yes: Click on PLAY to check your work
+  ~> no: Create a cross-functional flowchart
+
+Click on PLAY to check your work
+#circle Congrats! Level 2
+#end "You're done...for the moment :)"
+
+// The "No" branch from "Tutorial Done?" or "All Fine?"
+Create a new flowchart
+Create a decision bridge
+Add a label to a connector
+Zoom on a particular part of diagram
+
+#decision Done?
+  -> yes: #circle Congrats! Level 1
+  ~> no: Create a new flowchart
+
+// Exit path for "No" on "Ready for next level?"
+Click on the PLAY to check your work
+#end "Have a rest and come back later! :)"`
 };
 
 // ============================================================
@@ -467,7 +667,7 @@ window.require(['vs/editor/editor.main'], function (monaco) {
 
   // Create editor
   editor = monaco.editor.create(document.getElementById('editor'), {
-    value: EXAMPLES.registration,
+    value: EXAMPLES.security,
     language: 'flowscript',
     theme: 'flowscript-dark',
     fontSize: 14,
@@ -484,6 +684,11 @@ window.require(['vs/editor/editor.main'], function (monaco) {
     smoothScrolling: true,
     cursorBlinking: 'smooth',
     bracketPairColorization: { enabled: false },
+  });
+
+  // Highlight node on cursor move
+  editor.onDidChangeCursorPosition((e) => {
+    highlightNodeAtLine(e.position.lineNumber);
   });
 
   // Live render on change
@@ -532,11 +737,84 @@ function doRender() {
     const nodes = preview.querySelectorAll('.fs-node').length;
     const edges = preview.querySelectorAll('.fs-edge').length;
     status.textContent = `${nodes} nodes · ${edges} edges · ${elapsed}ms`;
+
+    // Re-apply highlight if cursor is still there
+    if (editor) {
+      highlightNodeAtLine(editor.getPosition().lineNumber);
+    }
   } catch (err) {
     errorBar.textContent = err.message || String(err);
     errorBar.classList.add('visible');
     status.textContent = 'Error';
   }
+}
+
+// ============================================================
+// Highlighting logic
+// ============================================================
+function highlightNodeAtLine(lineNumber, windowBefore = 1, windowAfter = 1) {
+  const svg = document.querySelector('.fs-diagram');
+  if (!svg) return;
+
+  // Clear previous highlights
+  svg.classList.remove('has-active');
+  svg.querySelectorAll('.active, .visited, .upcoming').forEach(el => {
+    el.classList.remove('active', 'visited', 'upcoming');
+  });
+
+  // Find node at this line
+  const node = svg.querySelector(`[data-line="${lineNumber}"]`);
+  if (!node) return;
+
+  const nodeId = node.getAttribute('data-node-id');
+  svg.classList.add('has-active');
+  node.classList.add('active');
+
+  const visitedNodes = new Set();
+  const visitedEdges = new Set();
+  const upcomingNodes = new Set();
+  const upcomingEdges = new Set();
+
+  // Trace back N steps
+  function traceBack(id, depth) {
+    if (depth <= 0) return;
+    svg.querySelectorAll(`.fs-edge[data-to="${id}"]`).forEach(edge => {
+      visitedEdges.add(edge);
+      const fromId = edge.getAttribute('data-from');
+      visitedNodes.add(fromId);
+      traceBack(fromId, depth - 1);
+    });
+  }
+
+  // Trace forward M steps
+  function traceForward(id, depth) {
+    if (depth <= 0) return;
+    svg.querySelectorAll(`.fs-edge[data-from="${id}"]`).forEach(edge => {
+      upcomingEdges.add(edge);
+      const toId = edge.getAttribute('data-to');
+      upcomingNodes.add(toId);
+      traceForward(toId, depth - 1);
+    });
+  }
+
+  traceBack(nodeId, windowBefore);
+  traceForward(nodeId, windowAfter);
+
+  // Apply classes
+  visitedNodes.forEach(id => {
+    const el = svg.querySelector(`[data-node-id="${id}"]`);
+    if (el) el.classList.add('visited');
+  });
+  visitedEdges.forEach(el => el.classList.add('visited'));
+
+  upcomingNodes.forEach(id => {
+    const el = svg.querySelector(`[data-node-id="${id}"]`);
+    if (el) el.classList.add('upcoming');
+  });
+  upcomingEdges.forEach(el => el.classList.add('upcoming'));
+
+  // Ensure active node is visible
+  node.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
 }
 
 // ============================================================

@@ -154,7 +154,7 @@ export function gridLayout(doc: FlowDocument): GridLayoutMeta {
     // pass, not by re-placement.
     if (placed.has(id)) continue;
 
-    const row = Math.max(rowHint, nextFreeRow(rows, column));
+    const row = nextFreeRow(rows, column, rowHint);
     placeNode(rows, columns, node, row, column);
     placed.set(id, { row, column });
 
@@ -163,7 +163,7 @@ export function gridLayout(doc: FlowDocument): GridLayoutMeta {
     // into side columns.
     const outs = out.get(id) ?? [];
     if (node.shape === 'decision' && outs.length >= 2) {
-      enqueueDecisionBranches(outs, id, row, column, queue, visiting, doc, columns);
+      enqueueDecisionBranches(outs, id, row, column, queue, visiting, doc, columns, rows);
     } else {
       // Linear chain: each child continues in this node's column.
       for (const e of outs) {
@@ -282,13 +282,18 @@ function placeNode(
  * given column. In practice, returns `from + 1` unless that row is
  * already occupied in that column — then we walk further down.
  */
-function nextFreeRow(rows: GridRow[], column: string): number {
-  // Find the deepest row that has anything in `column`, then place
-  // below it. If column has nothing yet, place at row 0.
-  for (let i = rows.length - 1; i >= 0; i--) {
-    if (rows[i].nodes.has(column)) return i + 1;
+function nextFreeRow(
+  rows: GridRow[],
+  column: string,
+  rowHint: number = 0,
+): number {
+  // Walk forward from rowHint, skipping any rows already occupied
+  // in this column. This respects the caller's placement intent.
+  let candidate = rowHint;
+  while (candidate < rows.length && rows[candidate]?.nodes.has(column)) {
+    candidate++;
   }
-  return rows.length === 0 ? 0 : 0;
+  return candidate;
 }
 
 /**
@@ -304,6 +309,39 @@ function nextFreeRow(rows: GridRow[], column: string): number {
  * enqueue it; the router treats the edge as a skip and routes it via
  * the outer channel between the source and the existing target.
  */
+/**
+ * Count how many nodes are currently placed in columns on a given side
+ * at or below `fromRow`. Used by the adaptive side-selection logic to
+ * measure how loaded each half of the diagram already is.
+ */
+/** Count nodes already placed in all columns on a given side. */
+function sideLoad(rows: GridRow[], side: 'E' | 'W'): number {
+  let n = 0;
+  for (const row of rows) {
+    for (const colId of row.nodes.keys()) {
+      if (side === 'E' ? colId.startsWith('E') : colId.startsWith('W')) n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * Choose between two candidate sides, preferring `preferred` unless the
+ * other side is substantially lighter (2× threshold with a small slack).
+ * This keeps the no/false → West convention in balanced diagrams while
+ * letting heavier flows balance across both sides.
+ */
+function adaptiveSide(
+  preferred: 'E' | 'W',
+  rows: GridRow[],
+): 'E' | 'W' {
+  const alt: 'E' | 'W' = preferred === 'W' ? 'E' : 'W';
+  const prefLoad = sideLoad(rows, preferred);
+  const altLoad  = sideLoad(rows, alt);
+  // Switch only when preferred side is clearly heavier than the other.
+  return prefLoad > altLoad * 2 + 2 ? alt : preferred;
+}
+
 function enqueueDecisionBranches(
   outs: FlowEdge[],
   sourceId: string,
@@ -313,6 +351,7 @@ function enqueueDecisionBranches(
   visiting: Set<string>,
   doc: FlowDocument,
   columns: Map<string, Column>,
+  rows: GridRow[],
 ): void {
   // Categorize.
   type Bucket = { edge: FlowEdge; main: boolean; side: 'E' | 'W' | null };
@@ -334,21 +373,36 @@ function enqueueDecisionBranches(
     buckets[0].main = true;
   }
 
-  // Second pass: assign side columns, alternating E then W.
+  // Second pass: assign side columns.
+  // no/false → West by convention, but adaptiveSide() may flip to East if
+  // the West side is already significantly more loaded below this row.
+  // Multi-way branches alternate W/E, also subject to load balancing.
   let nextSideIdx = 0;
   for (const b of buckets) {
     if (b.main) continue;
     const cond = (b.edge.condition ?? '').toLowerCase();
     if (cond === 'no' || cond === 'false') {
-      b.side = 'E';
+      b.side = adaptiveSide('W', rows);
     } else {
-      b.side = (nextSideIdx % 2 === 0) ? 'E' : 'W';
+      const preferred: 'E' | 'W' = (nextSideIdx % 2 === 0) ? 'W' : 'E';
+      b.side = adaptiveSide(preferred, rows);
       nextSideIdx++;
     }
   }
   // Ensure at most one E and one W in this batch by re-balancing.
   const eUsed = buckets.filter(b => b.side === 'E').length;
   const wUsed = buckets.filter(b => b.side === 'W').length;
+  if (wUsed > 1 && eUsed === 0) {
+    // All side branches landed on W; move one non-no branch to E.
+    let flipped = false;
+    for (const b of buckets) {
+      const c = (b.edge.condition ?? '').toLowerCase();
+      if (b.side === 'W' && !flipped && c !== 'no' && c !== 'false') {
+        b.side = 'E';
+        flipped = true;
+      }
+    }
+  }
   if (eUsed > 1 && wUsed === 0) {
     let flipped = false;
     for (const b of buckets) {
@@ -359,6 +413,17 @@ function enqueueDecisionBranches(
     }
   }
 
+  // If the main branch is a back-edge (already visited) and there is exactly
+  // one new side branch, that side branch IS the sub-flow continuation —
+  // keep it in the source column rather than branching further out. This
+  // avoids creating a W2/E2 column for patterns like:
+  //   decision → yes: <already placed>
+  //            → no:  NodeA → NodeB → <back-edge>
+  const mainBucket = buckets.find(b => b.main);
+  const mainIsBackEdge = !!mainBucket && visiting.has(mainBucket.edge.to);
+  const newSideBranches = buckets.filter(b => !b.main && !visiting.has(b.edge.to));
+  const continueInSameCol = mainIsBackEdge && newSideBranches.length === 1;
+
   // Enqueue each branch.
   for (const b of buckets) {
     if (visiting.has(b.edge.to)) {
@@ -366,10 +431,10 @@ function enqueueDecisionBranches(
       continue;
     }
     visiting.add(b.edge.to);
-    if (b.main) {
+    if (b.main || continueInSameCol) {
       queue.push({ id: b.edge.to, column: sourceColumn, rowHint: sourceRow + 1 });
     } else {
-      const sideCol = ensureSideColumn(columns, sourceColumn, b.side ?? 'E');
+      const sideCol = ensureSideColumn(columns, sourceColumn, b.side ?? 'W');
       queue.push({ id: b.edge.to, column: sideCol, rowHint: sourceRow + 1 });
     }
   }
@@ -461,6 +526,13 @@ function classifySkipEdges(
     const b = placed.get(e.to);
     if (!a || !b) continue;
     if (e.from === e.to) continue;          // self-loop handled separately
+
+    // Back-edge: target is above source → always route via outer channel.
+    if (b.row < a.row) {
+      skip.add(`${i}:${e.from}->${e.to}`);
+      continue;
+    }
+
     const sameColumn = a.column === b.column;
     const rowGap = Math.abs(a.row - b.row);
     // Same column and >1 rows apart → must skip past intermediate nodes.
@@ -489,6 +561,13 @@ function classifySkipEdges(
         if (Math.abs(hi - lo) >= 2) {
           skip.add(`${i}:${e.from}->${e.to}`);
         }
+      }
+
+      // Any cross-column forward edge: if the *target* column already has a
+      // node at the *source* row, a direct L-shaped path at that y-coordinate
+      // would pierce that node. Route via the channel instead.
+      if (b.row > a.row && rows[a.row]?.nodes.has(b.column)) {
+        skip.add(`${i}:${e.from}->${e.to}`);
       }
     }
   }
