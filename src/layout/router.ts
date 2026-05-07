@@ -874,8 +874,25 @@ function routeGridSkip(
   // exitFinalDir / finalEntryDir may have shifted to a new cardinal due to
   // reservation; update them so the path geometry matches.
   exitFinalDir = resolvedExitDir;
-  const finalEntryDir: CardinalDir = resolvedEntryDir;
+  let finalEntryDir: CardinalDir = resolvedEntryDir;
 
+  // Sanity-check: if port reservation assigned E/W entry but the channel
+  // is on the *opposite* side of the node, a horizontal segment from the
+  // channel to that face would pierce the node body. Fall back to S/N entry,
+  // which is always reachable by travelling up/down the channel first.
+  {
+    const nodeLeft  = (to.x ?? 0) - (to.width ?? 180) / 2;
+    const nodeRight = (to.x ?? 0) + (to.width ?? 180) / 2;
+    const channelLeftOfNode  = channelX < nodeLeft;
+    const channelRightOfNode = channelX > nodeRight;
+    if (finalEntryDir === 'E' && channelLeftOfNode) {
+      finalEntryDir = goingDown ? 'N' : 'S';
+      entry = portForReserved(to, finalEntryDir, null, 'entry', finalEntryDir);
+    } else if (finalEntryDir === 'W' && channelRightOfNode) {
+      finalEntryDir = goingDown ? 'N' : 'S';
+      entry = portForReserved(to, finalEntryDir, null, 'entry', finalEntryDir);
+    }
+  }
 
   // Build waypoints. When exiting on a side, jog out to channel at the
   // source row first. When exiting top/bottom — or when the row is
