@@ -1,0 +1,38 @@
+# FlowScript
+
+> A diagram-as-code DSL that renders clean flowcharts from human-readable text.
+> Source → SVG in one function call. No layout coordinates. No drag-and-drop.
+
+## What it is
+
+FlowScript is a TypeScript library (and CLI) that compiles a plain-text `.flow` file
+into a polished SVG flowchart. The compiler pipeline is: **parse → layout → route → renderSVG**.
+
+## Key files
+
+- `README.md` — full syntax reference, API docs, SVG output conventions
+- `llms-full.txt` — compact, unambiguous syntax spec for LLM consumption (start here)
+- `src/index.ts` — public API: `parse`, `layout`, `route`, `renderSVG`, `render`
+- `src/parser/ast.ts` — AST type definitions (`FlowDocument`, `FlowNode`, `FlowEdge`, …)
+- `test/fixtures/` — canonical `.flow` examples covering every language feature
+
+## Canonical fixture files (read these as ground truth)
+
+| File | What it demonstrates |
+|------|----------------------|
+| `test/fixtures/learning-flow.flow` | Most complete: decisions, loops, subprocesses, retry edges |
+| `test/fixtures/retry-edges.flow` | `~>` retry/dashed edge syntax |
+| `test/fixtures/decision-back-edges.flow` | Single-quote condition syntax, back-edge loops |
+| `test/fixtures/multi-branch-decision.flow` | Three-way decision branching |
+| `test/fixtures/swimlanes.flow` | `#lane` swimlane layout with cross-lane edges |
+
+## Generating SVG
+
+```bash
+npx tsx scripts/gen-svg.ts learning-flow   # renders test/fixtures/learning-flow.flow
+```
+
+## Full syntax spec
+
+See `llms-full.txt` in this directory for the complete, LLM-optimized specification
+including grammar, all node types, connection rules, common mistakes, and worked examples.

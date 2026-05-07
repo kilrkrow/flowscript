@@ -1,0 +1,587 @@
+# FlowScript — Complete Language Specification for LLMs
+
+Version: current (see package.json for semver)
+Canonical examples: test/fixtures/*.flow
+Public API: src/index.ts
+
+---
+
+## Overview
+
+FlowScript is a plain-text DSL that compiles to SVG flowcharts.
+Pipeline: parse → layout → route → renderSVG
+
+One-shot usage:
+```typescript
+import { render } from 'flowscript';
+const svg = render(`
+  #start Begin
+    Process Data
+    #end Done
+`);
+```
+
+Stepwise:
+```typescript
+import { parse, layout, route, renderSVG, cleanTheme } from 'flowscript';
+const doc = parse(source);
+layout(doc);
+const routes = route(doc);
+const svg = renderSVG(doc, routes, { theme: cleanTheme });
+```
+
+---
+
+## File structure
+
+A .flow file has three optional sections in this order:
+
+1. Frontmatter block (YAML-style, between `---` lines)
+2. Directives (lines starting with `@`)
+3. Node definitions (everything else)
+
+```
+---
+title: My Diagram
+author: Alice
+---
+
+@theme clean
+@direction TB
+
+#start Entry Point
+  Step One
+  #end Done
+```
+
+---
+
+## Frontmatter
+
+Optional. Delimited by `---` lines. Supports arbitrary key: value pairs.
+Only `title` and `subtitle` are rendered in SVG output; others are metadata.
+
+```
+---
+title: Incident Response
+subtitle: Security Operations Center Protocol
+author: Guy Schamp
+version: 2.1
+---
+```
+
+---
+
+## Directives
+
+Directives configure the layout and renderer. All optional.
+
+```
+@theme clean          # visual theme (clean is the only built-in default)
+@direction TB         # flow direction: TB (default), BT, LR, RL
+@routing orthogonal   # edge routing: orthogonal (default), bezier, polyline
+@line-jumps on        # Visio-style arc hops at crossings: on (default), off
+@corner-radius 8      # orthogonal edge corner radius in px
+@spacing 60           # dagre node spacing
+@layout grid          # layout engine: grid (default for TB), dagre
+```
+
+---
+
+## Nodes
+
+### Plain text → process rectangle (most common shape)
+
+```
+Step One
+Validate Input
+Send Confirmation Email
+```
+
+Each plain-text line at the current indent level becomes a rectangular process node.
+Nodes at the same indent level under a parent are chained sequentially (implicit edges).
+
+### Keyword shapes
+
+All keyword shapes use the pattern: `#keyword Label text`
+
+| Keyword       | SVG shape           | Use for                        |
+|---------------|---------------------|--------------------------------|
+| `#start`      | Rounded rectangle   | Entry point (one per flow)     |
+| `#end`        | Rounded rectangle   | Terminal (multiple allowed)    |
+| `#decision`   | Diamond             | Branching condition            |
+| `#subprocess` | Double-border rect  | Reusable sub-process           |
+| `#io`         | Parallelogram       | Input / output                 |
+| `#data`       | Cylinder            | Database or data store         |
+| `#circle`     | Circle              | Connector / junction           |
+| `#note`       | Folded-corner rect  | Annotation                     |
+| `#manual`     | Trapezoid           | Manual operation               |
+| `#delay`      | Half-rounded rect   | Wait or timer                  |
+
+```
+#start User Visits Page
+  Validate Session
+  #subprocess Load User Profile
+  #io Display Dashboard
+  #decision Session Expired?
+    -> yes: #end Logout
+    -> no: Continue
+  #data Save Activity Log
+  #end Done
+```
+
+---
+
+## Connections (edges)
+
+### Implicit chaining
+
+Nodes at the same indentation level under a shared parent connect top-to-bottom automatically.
+This is the primary way to build linear sequences.
+
+```
+#start Begin
+  Step One
+  Step Two
+  Step Three
+  #end Done
+```
+
+Result: Begin → Step One → Step Two → Step Three → Done
+
+### Explicit arrow `->`
+
+Use `->` to connect any two named nodes, bypassing indentation hierarchy.
+The source and target are matched by their exact label text.
+
+```
+Step One -> Step Two
+Step One -> Step Two: "with a label"
+```
+
+Cross-section connections (required for groups, swimlanes, and non-sequential flows):
+```
+Submit -> Review
+Review -> Approve
+Approve -> #end Complete
+```
+
+### Retry / dashed edge `~>`
+
+`~>` works identically to `->` but renders the path as a dashed line.
+Use it for loop-backs, retries, or any "soft" / cyclical connection.
+
+```
+#decision Retry?
+  -> yes: #end Done
+  ~> no: Validate Input
+```
+
+For backward compatibility, edges with label text exactly `"try again"` or `"resend"`
+also render dashed when written with `->`. Prefer `~>` in new diagrams.
+
+---
+
+## Decisions
+
+### Basic two-way decision
+
+```
+#decision Approved?
+  -> yes: Next Step
+  -> no: Rejected
+```
+
+### Single-quote condition syntax (preferred — no ambiguity with colons in labels)
+
+```
+#decision Approved?
+  -> 'Yes' Next Step
+  -> 'No'  Rejected
+```
+
+Conditions are matched case-insensitively.
+`yes` / `Yes` / `YES` are all equivalent.
+`no` / `No` / `NO` are all equivalent.
+
+### Multi-way branching
+
+```
+#decision Priority?
+  -> 'P1' Page On-Call
+  -> 'P2' Assign Team Lead
+  -> 'P3' Add to Backlog
+```
+
+### Decision with loop-back (cycle / retry)
+
+Reference an existing node's exact label to create a back-edge.
+
+```
+#decision Ready?
+  -> yes: #end Complete
+  -> no: Prepare
+```
+
+Here `Prepare` must already exist as a node earlier in the file (or be defined elsewhere).
+The router creates a back-edge automatically.
+
+### Inline #end / #start on a branch
+
+```
+#decision Valid?
+  -> yes: #end Success
+  -> no: #end Failure
+```
+
+This creates two distinct end nodes inline. Each gets its own shape.
+
+---
+
+## Loop-backs
+
+Any `->` or branch that names an existing node label creates a loop-back (back-edge).
+There is no special syntax — just reuse the exact label.
+
+```
+Validate Input
+#decision Valid?
+  -> yes: Save Record
+  -> no: Validate Input     ← back-edge: references node defined above
+```
+
+For retry/dashed rendering on the loop:
+```
+#decision Valid?
+  -> yes: Save Record
+  ~> no: Validate Input
+```
+
+---
+
+## Groups
+
+`#group` defines a labeled container. Nodes indented under it are its children.
+Children chain implicitly and are visually enclosed in the group box.
+
+```
+#group Payment Processing
+  Validate Card
+  Charge Card
+  Send Receipt
+
+#group Fulfillment
+  Pick Items
+  Pack Order
+  Ship Order
+
+// Cross-group connections must be explicit
+Send Receipt -> Pick Items
+```
+
+### CRITICAL: #group cannot be used inline as a reference or jump target
+
+WRONG — this creates an empty duplicate group, not a connection:
+```
+Step One
+  #group My Group    ← INVALID: not a jump/pointer
+```
+
+CORRECT — end the current section, then define the group block:
+```
+Step One
+Step Two
+
+#group My Group
+  First Child
+  Second Child
+```
+
+To connect into a group, use an explicit edge to the group's first child node:
+```
+Step Two -> First Child
+```
+
+---
+
+## Swimlanes
+
+`#lane` partitions nodes into labeled horizontal (or vertical) swim-lane columns.
+Nodes inside a lane are implicitly chained. Cross-lane connections must be explicit.
+
+```
+#lane Customer
+  #start Report Issue
+  Provide Details
+  #end Resolved
+
+#lane Support Agent
+  Triage Ticket
+  #decision Severity?
+    -> high: Escalate to Engineering
+    -> low: Apply Known Fix
+
+#lane Engineering
+  Investigate Root Cause
+  Deploy Fix
+
+// Cross-lane edges (always explicit)
+Provide Details -> Triage Ticket
+Escalate to Engineering -> Investigate Root Cause
+Deploy Fix -> Resolved
+Apply Known Fix -> Resolved
+```
+
+Swimlanes automatically use the dagre layout engine (not grid).
+`@direction TB` is supported; `@direction LR` is also valid for row-based lanes.
+
+---
+
+## Comments
+
+Full-line comments only. Inline comments (end of a node line) are not supported.
+
+```
+// This is a valid comment
+#start Begin
+  Step One    // INVALID: this text is part of the node label, not a comment
+  Step Two
+// Another comment
+  #end Done
+```
+
+---
+
+## What FlowScript does NOT support
+
+These are common mistakes LLMs make. None of the following are valid syntax:
+
+❌ Parenthetical annotations:
+```
+#start Active Shooter Alert Received
+  (Cameras / Alarms / Reports / Calls)    ← INVALID: becomes a process node
+```
+
+❌ Bullet / sub-item lists:
+```
+Share Intel Package
+  - Last known shooter location           ← INVALID: becomes a process node labeled "- Last known shooter location"
+  - Number of shooters                    ← INVALID: same
+```
+
+❌ Inline `#group` references (pointer / jump syntax):
+```
+Step One
+  #group My Group     ← INVALID: creates empty group, not a connection
+```
+
+❌ Dead-end "Continue X" placeholder nodes (nodes with no outgoing edges that are loop targets):
+```
+#decision Resolved?
+  -> yes: Done
+  -> no: Continue Monitoring    ← if "Continue Monitoring" has no edges, it's a dead end
+```
+Fix: point directly at the loop target, or add an explicit back-edge from "Continue Monitoring".
+
+❌ Annotations / notes attached to edges (no edge metadata syntax):
+```
+Step One -> Step Two (note: check logs first)    ← INVALID
+```
+Use a `#note` node or a labeled edge instead:
+```
+Step One -> Step Two: "check logs first"
+```
+
+❌ Nested decision indentation inside an unrelated section:
+```
+Immediate Actions
+  Do Thing
+    #decision Confirmed?    ← indented under "Do Thing" — this creates a decision
+                               as a child of "Do Thing", not of "Immediate Actions"
+```
+Decisions attach to their immediate parent in the indentation hierarchy.
+Keep decision blocks one level under the section they belong to.
+
+---
+
+## Indentation rules
+
+- Use consistent indentation (2 or 4 spaces, or tabs — pick one per file)
+- Indent level determines parent-child (sequential chain) relationship
+- Children of a node chain linearly: A → B → C → ...
+- A `#decision` block and its `->` branches must be indented under their logical parent
+- After a decision, continuing siblings at the same level chain from the decision's last output
+
+```
+#start Begin
+  Validate          ← child of Begin
+  #decision OK?     ← child of Begin, chained after Validate
+    -> yes: Save    ← branch (not a child of the decision, but its target)
+    -> no: Error    ← branch
+  Notify            ← back at Begin's child level — chained after decision
+  #end Done
+```
+
+---
+
+## Worked examples
+
+### Example 1: Linear flow
+
+```
+#start User Visits Signup Page
+  Enter Email & Password
+  Send Verification Email
+  #end Registration Complete
+```
+
+### Example 2: Decision with loop
+
+```
+#start Submit Form
+  Validate Input
+  #decision Valid?
+    -> yes: Save Record
+    ~> no: Validate Input
+  Save Record
+  #end Done
+```
+
+### Example 3: Multi-level decisions with retry
+
+```
+---
+title: Learning Flow
+---
+
+#start Begin Lesson
+  Read Introduction
+  #subprocess Watch Demo Video
+  #decision Did you understand the demo?
+    -> yes: Take Practice Quiz
+    -> no: Re-watch Demo Video
+  Re-watch Demo Video ~> Watch Demo Video: "try again"
+  Take Practice Quiz
+  #decision Quiz score 80%+?
+    -> yes: Advance to Project
+    -> no: Review Concepts
+  Review Concepts
+  #decision Ready to retake quiz?
+    -> yes: Take Practice Quiz
+    -> no: Schedule Tutoring
+  Schedule Tutoring -> Attend Tutoring Session
+  Attend Tutoring Session -> Take Practice Quiz
+  Advance to Project
+    #subprocess Build Capstone Project
+    #decision Project meets criteria?
+      -> yes: Submit For Review
+      -> no: Iterate On Project
+    Iterate On Project ~> Build Capstone Project: "iterate"
+    Submit For Review
+    #decision Reviewer approved?
+      -> yes: #end Lesson Complete
+      -> no: Iterate On Project
+```
+
+### Example 4: Security operations procedure (correct version of a Grok-generated diagram)
+
+```
+---
+title: GSOC Active Shooter Response
+subtitle: Security Operations Center Protocol
+---
+
+#start Active Shooter Alert Received
+
+Verify & Confirm Incident
+
+#decision Confirmed?
+  -> yes: Immediate Actions
+  -> no: Verify & Confirm Incident
+
+Immediate Actions
+  Activate Site Lockdown
+  Trigger Mass Notification
+  Dispatch On-Site Security Teams
+  Call 911
+
+#group Monitoring & Coordination
+  Track Shooter via CCTV
+  Coordinate Field Security Teams
+  Relay Updates to Law Enforcement
+  Manage Internal Communications
+
+  #decision Shooter Neutralized or Contained?
+    -> yes: LE Arrival & Handover
+    -> no: Track Shooter via CCTV
+
+Immediate Actions -> Track Shooter via CCTV
+
+LE Arrival & Handover
+  Share Full Intel Package
+  Provide Physical Access Support
+  Assist with Perimeter Security
+
+  #decision Incident Stabilized?
+    -> yes: Recovery Phase
+    -> no: LE Arrival & Handover
+
+Recovery Phase
+  Personnel Accountability
+  Support LE Investigation
+  Activate Business Continuity Plan
+  Debrief & After-Action Review
+
+#end Incident Resolved
+```
+
+---
+
+## Quick reference: condition keywords
+
+The following condition strings receive special routing treatment
+(yes-branch exits diamond bottom; no-branch exits diamond side):
+
+- Positive: `yes`, `true` (case-insensitive)
+- Negative: `no`, `false` (case-insensitive)
+
+All other condition strings (e.g. `high`, `P1`, `approved`) are treated
+as neutral — the router uses geometry to pick exit direction.
+
+---
+
+## SVG output conventions
+
+Every rendered SVG has:
+- `class="fs-diagram"` on the root `<svg>`
+- `<g class="fs-edges">` containing all edge groups
+- `<g class="fs-nodes">` containing all node groups
+- Each node: `<g class="fs-node" data-node-id="nN" data-shape="TYPE">`
+- Each edge: `<g class="fs-edge" data-from="nN" data-to="nN">`
+- Edge paths: `<path class="fs-edge-path">` (retry edges add `fs-edge-retry`)
+- Edge labels: `<text class="fs-edge-label">`
+
+Node IDs are assigned sequentially in parse order: `n1`, `n2`, `n3`, …
+
+JavaScript selectors:
+```javascript
+svg.querySelector('[data-node-id="n3"]')        // node by ID
+svg.querySelectorAll('[data-shape="decision"]')  // all diamonds
+svg.querySelectorAll('[data-from="n3"]')         // edges leaving n3
+svg.querySelectorAll('[data-to="n3"]')           // edges entering n3
+```
+
+---
+
+## Source files for deeper reference
+
+| Path | Contents |
+|------|----------|
+| `src/parser/ast.ts` | AST types: FlowDocument, FlowNode, FlowEdge, FlowGroup, FlowLane |
+| `src/parser/lexer.ts` | Token types and tokenization rules |
+| `src/parser/parser.ts` | Recursive descent parser |
+| `src/layout/grid-layout.ts` | Grid layout engine (TB default) |
+| `src/layout/router.ts` | Orthogonal edge router |
+| `src/render/svg.ts` | SVG renderer |
+| `src/themes/clean.ts` | Default theme tokens |
+| `test/fixtures/` | Canonical .flow examples (ground truth) |
