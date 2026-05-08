@@ -1,0 +1,52 @@
+---
+title: GSOC Active Shooter Response
+subtitle: Security Operations Center Protocol
+---
+
+#start Active Shooter Alert Received
+  (Cameras / Alarms / Reports / Calls)
+
+  Verify & Confirm Incident
+
+    #decision Confirmed?
+      -> yes: Immediate Actions
+      -> no: Continue Monitoring
+
+Immediate Actions
+  Activate Site Lockdown (if available)
+  Trigger Mass Notification / PA Alert
+  Dispatch On-Site Security Teams
+  Call 911 + Share Initial Intel
+
+  #group Monitoring & Coordination
+
+#group Monitoring & Coordination
+  Track Shooter via CCTV / Sensors
+  Coordinate Field Security Teams
+  Relay Real-Time Updates to Law Enforcement
+  Manage Internal Communications
+
+    #decision Shooter Neutralized or Contained?
+      -> yes: LE Arrival & Handover
+      -> no: Continue Support
+
+LE Arrival & Handover
+  Share Full Intel Package
+    - Last known shooter location
+    - Number of shooters & weapons
+    - Casualty information
+    - Floor plans & camera feeds
+  Provide Physical Access Support
+  Assist with Perimeter Security
+
+  #decision Incident Stabilized?
+    -> yes: Recovery Phase
+    -> no: Continue Coordination
+
+Recovery Phase
+  Personnel Accountability
+  Support LE Investigation
+  Activate Business Continuity Plan
+  Debrief & After-Action Review
+
+#end Incident Resolved
