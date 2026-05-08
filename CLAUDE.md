@@ -74,6 +74,51 @@ src/themes/      clean.ts             → stroke, fill, font tokens
 
 ---
 
+## Product Architecture & Deployment Strategy
+
+### What this repo contains
+
+1. **Core library** (`src/`) — parser, layout, router, renderer. The engine everything else depends on.
+2. **CLI** (`src/cli.ts`) — local command-line usage.
+3. **MCP server** (`src/mcp-server.ts`) — developer-facing tool integration.
+4. **Web server** (`server/`) — self-hosted Bun HTTP server: SOP → LLM → `.flow` + SVG. Deployed via Docker/Portainer.
+5. **Browser editor** (`editor/`) — static browser bundle (`build:editor`). Currently deployed standalone to Cloudflare.
+
+### Decided: generator + editor cohabitate in this repo
+
+The live editor (currently at `flowscript.foxanddoveconsulting`) and the self-hosted generator (`server/`) will be unified into a single product served from this repo's server. Rationale:
+
+- The user journey is one workflow: *paste document → AI generates `.flow` → user refines → downloads SVG*
+- Splitting across two URLs requires a cross-domain handoff hack (URL fragments)
+- Both need the same `flowscript.js` browser bundle — no reason to duplicate
+- Future multiuser SaaS needs a backend anyway (LLM key cannot be in the browser)
+
+**Target structure:**
+```
+GET /            → generator page (current server/ui/index.html)
+GET /editor      → live .flow editor page (adapted from editor/)
+GET /flowscript.js → browser bundle (served as static asset)
+```
+
+"Edit .flow" button on the generator opens `/editor#<encoded flow>`. Editor reads the hash on load and pre-populates.
+
+### Deployment tiers (long-term)
+
+| Tier | Who | Backend | LLM key |
+|---|---|---|---|
+| Self-hosted (Docker) | Private orgs | Their Portainer/server | Their own key |
+| Cloudflare (SaaS) | Everyone else | Cloudflare Workers | We pay, usage-gated |
+| Browser-only | Developers / power users | None | N/A — editor only |
+
+**Key constraint:** the LLM call must always live server-side. Never expose API keys in the browser bundle. This means the Cloudflare public deployment will eventually need Workers (not just Pages).
+
+### What stays separate (for now)
+
+- The Cloudflare editor at `flowscript.foxanddoveconsulting` remains live as-is — it's not broken, just incomplete. It gets replaced when the unified product is ready.
+- No separate repo for the web app. It's a consumer of the core library in the same repo, importing directly from `src/` without an npm publish step.
+
+---
+
 ## Behavioral Guidelines
 
 *(From [forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills))*
