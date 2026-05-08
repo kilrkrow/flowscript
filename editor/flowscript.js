@@ -808,7 +808,7 @@ class Parser {
     return `g_${label.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
   }
 }
-// node_modules/@dagrejs/dagre/dist/dagre.esm.js
+// ../../../node_modules/@dagrejs/dagre/dist/dagre.esm.js
 var exports_dagre_esm = {};
 __export(exports_dagre_esm, {
   version: () => U,
@@ -2962,8 +2962,11 @@ function estimateTextWidth(text, fontSize = 13) {
 function layoutDocument(doc) {
   if (shouldUseGridLayout(doc)) {
     const meta = gridLayout(doc);
-    gridMetaForDoc.set(doc, meta);
-    return;
+    const hasColumnExplosion = getDirective(doc, "layout", "") !== "grid" && [...meta.columns.values()].some((c) => c.level > 1);
+    if (!hasColumnExplosion) {
+      gridMetaForDoc.set(doc, meta);
+      return;
+    }
   }
   gridMetaForDoc.delete(doc);
   const direction = getDirection(doc);
@@ -4794,13 +4797,14 @@ function renderSVG(doc, routes, options) {
   const bounds = calculateBounds(doc, routes, padding);
   const width = bounds.maxX - bounds.minX;
   const height = bounds.maxY - bounds.minY;
+  const bgRect = theme.background && theme.background !== "#ffffff" && theme.background !== "transparent" ? el("rect", { x: bounds.minX, y: bounds.minY, width, height, fill: theme.background }) : el("g", {});
   const root = el("svg", {
     xmlns: "http://www.w3.org/2000/svg",
     viewBox: `${bounds.minX} ${bounds.minY} ${width} ${height}`,
     width,
     height,
     class: "fs-diagram"
-  }, renderDefs(theme), renderLanes(doc, theme), renderGroups(doc, theme), renderEdges(doc, routes, theme), renderNodes(doc, theme));
+  }, renderDefs(theme), bgRect, renderLanes(doc, theme), renderGroups(doc, theme), renderEdges(doc, routes, theme), renderNodes(doc, theme));
   return serializeToSVG(root);
 }
 function renderDefs(theme) {
@@ -5116,6 +5120,189 @@ function calculateBounds(doc, routes, padding) {
     maxY: maxY + padding
   };
 }
+// src/compiler/json-to-flow.ts
+function jsonToFlow(graph) {
+  validate(graph);
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+  const outById = new Map(graph.nodes.map((n) => [n.id, []]));
+  const inById = new Map(graph.nodes.map((n) => [n.id, []]));
+  for (const e of graph.edges) {
+    outById.get(e.from).push(e);
+    inById.get(e.to).push(e);
+  }
+  const inDeg = new Map(graph.nodes.map((n) => [n.id, inById.get(n.id).length]));
+  const queue = graph.nodes.filter((n) => inDeg.get(n.id) === 0).map((n) => n.id);
+  const topo = [];
+  while (queue.length > 0) {
+    const id = queue.shift();
+    topo.push(id);
+    for (const e of outById.get(id) ?? []) {
+      const d = (inDeg.get(e.to) ?? 1) - 1;
+      inDeg.set(e.to, d);
+      if (d === 0)
+        queue.push(e.to);
+    }
+  }
+  const inTopo = new Set(topo);
+  for (const n of graph.nodes) {
+    if (!inTopo.has(n.id))
+      topo.push(n.id);
+  }
+  const topoIdx = new Map(topo.map((id, i) => [id, i]));
+  const isBack = (e) => (topoIdx.get(e.to) ?? 0) <= (topoIdx.get(e.from) ?? 0);
+  const fwdEdges = graph.edges.filter((e) => !isBack(e));
+  const backEdges = graph.edges.filter((e) => isBack(e));
+  const lbl = (id) => nodeById.get(id).label;
+  const kw = (shape) => {
+    switch (shape) {
+      case "start":
+        return "#start";
+      case "end":
+        return "#end";
+      case "decision":
+        return "#decision";
+      case "subprocess":
+        return "#subprocess";
+      case "io":
+        return "#io";
+      case "data":
+        return "#data";
+      case "circle":
+        return "#circle";
+      case "note":
+        return "#note";
+      case "manual":
+        return "#manual";
+      case "delay":
+        return "#delay";
+      default:
+        return "";
+    }
+  };
+  const decl = (id) => {
+    const n = nodeById.get(id);
+    const k2 = kw(n.shape);
+    return k2 ? `${k2} ${n.label}` : n.label;
+  };
+  const arrowStr = (e, label) => {
+    const arr = e.retry ? "~>" : "->";
+    const lPart = label ?? e.label ? `: "${label ?? e.label}"` : "";
+    return `${arr}${lPart}`;
+  };
+  const edgeKey = (from, to) => `${from}::${to}`;
+  const lines = [];
+  const declared = new Set;
+  const covered = new Set;
+  let simPrev = null;
+  const markDecl = (id) => declared.add(id);
+  const breakChain = (fromId) => {
+    const outs = fwdEdges.filter((e2) => e2.from === fromId);
+    if (outs.length === 0) {
+      simPrev = null;
+      return;
+    }
+    const e = outs[0];
+    const arr = e.retry ? "~>" : "->";
+    const lPart = e.label ? `: "${e.label}"` : "";
+    lines.push(`${lbl(fromId)} ${arr} ${lbl(e.to)}${lPart}`);
+    covered.add(edgeKey(fromId, e.to));
+    markDecl(e.to);
+    simPrev = null;
+  };
+  if (graph.title || graph.subtitle) {
+    lines.push("---");
+    if (graph.title)
+      lines.push(`title: ${graph.title}`);
+    if (graph.subtitle)
+      lines.push(`subtitle: ${graph.subtitle}`);
+    lines.push("---");
+    lines.push("");
+  }
+  const dirLines = [];
+  if (graph.theme)
+    dirLines.push(`@theme ${graph.theme}`);
+  if (graph.direction && graph.direction !== "TB")
+    dirLines.push(`@direction ${graph.direction}`);
+  if (dirLines.length > 0) {
+    lines.push(...dirLines, "");
+  }
+  for (const id of topo) {
+    if (declared.has(id))
+      continue;
+    markDecl(id);
+    const node = nodeById.get(id);
+    const fwdOuts = fwdEdges.filter((e) => e.from === id);
+    if (node.shape === "decision") {
+      if (simPrev !== null) {
+        const wantedFromPrev = fwdEdges.some((e) => e.from === simPrev && e.to === id);
+        if (!wantedFromPrev)
+          breakChain(simPrev);
+        else
+          covered.add(edgeKey(simPrev, id));
+      }
+      lines.push(decl(id));
+      for (const e of fwdOuts) {
+        const cond = e.condition ? `'${e.condition}' ` : "";
+        lines.push(`  -> ${cond}${lbl(e.to)}`);
+        covered.add(edgeKey(e.from, e.to));
+        markDecl(e.to);
+      }
+      simPrev = null;
+      continue;
+    }
+    if (simPrev !== null) {
+      const wantedFromPrev = node.shape !== "start" && fwdEdges.some((e) => e.from === simPrev && e.to === id);
+      if (wantedFromPrev) {
+        covered.add(edgeKey(simPrev, id));
+      } else if (node.shape !== "start") {
+        breakChain(simPrev);
+      }
+    }
+    lines.push(decl(id));
+    simPrev = node.shape === "start" ? id : node.shape === "end" ? null : id;
+  }
+  const explicit = [
+    ...fwdEdges.filter((e) => !covered.has(edgeKey(e.from, e.to))),
+    ...backEdges
+  ];
+  if (explicit.length > 0) {
+    lines.push("");
+    for (const e of explicit) {
+      const arr = e.retry ? "~>" : "->";
+      const cond = e.condition ? `'${e.condition}' ` : "";
+      const lPart = e.label ? `: "${e.label}"` : "";
+      lines.push(`${lbl(e.from)} ${arr} ${cond}${lbl(e.to)}${lPart}`);
+    }
+  }
+  return lines.join(`
+`).replace(/\n{3,}/g, `
+
+`).trimEnd() + `
+`;
+}
+function validate(graph) {
+  if (!graph.nodes || graph.nodes.length === 0) {
+    throw new Error("jsonToFlow: graph must have at least one node");
+  }
+  const ids = new Set;
+  for (const n of graph.nodes) {
+    if (!n.id)
+      throw new Error(`jsonToFlow: node missing id: ${JSON.stringify(n)}`);
+    if (!n.label)
+      throw new Error(`jsonToFlow: node "${n.id}" missing label`);
+    if (ids.has(n.id))
+      throw new Error(`jsonToFlow: duplicate node id "${n.id}"`);
+    ids.add(n.id);
+  }
+  for (const e of graph.edges ?? []) {
+    if (!ids.has(e.from))
+      throw new Error(`jsonToFlow: edge references unknown node "${e.from}"`);
+    if (!ids.has(e.to))
+      throw new Error(`jsonToFlow: edge references unknown node "${e.to}"`);
+  }
+  const hasStart = graph.nodes.some((n) => n.shape === "start") || graph.edges.every((e) => graph.nodes.some((n) => n.id === e.to)) === false;
+  if (!hasStart) {}
+}
 // src/themes/clean.ts
 var cleanTheme = {
   name: "clean",
@@ -5250,6 +5437,7 @@ export {
   parse,
   listThemes,
   layoutDocument as layout,
+  jsonToFlow,
   cleanTheme,
   cleanDarkTheme
 };

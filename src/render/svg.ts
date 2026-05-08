@@ -30,6 +30,10 @@ export function renderSVG(doc: FlowDocument, routes: Map<string, RouteResult>, o
   const height = bounds.maxY - bounds.minY;
 
   // Build the SVG tree
+  const bgRect = theme.background && theme.background !== '#ffffff' && theme.background !== 'transparent'
+    ? el('rect', { x: bounds.minX, y: bounds.minY, width, height, fill: theme.background })
+    : el('g', {});
+
   const root = el('svg', {
     xmlns: 'http://www.w3.org/2000/svg',
     viewBox: `${bounds.minX} ${bounds.minY} ${width} ${height}`,
@@ -38,6 +42,7 @@ export function renderSVG(doc: FlowDocument, routes: Map<string, RouteResult>, o
     class: 'fs-diagram',
   },
     renderDefs(theme),
+    bgRect,
     renderLanes(doc, theme),
     renderGroups(doc, theme),
     renderEdges(doc, routes, theme),
