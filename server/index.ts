@@ -19,8 +19,9 @@ import { extractFromUrl, extractFromFile } from './extract.js';
 import { extractGraph, hasApiKey } from './llm.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
-const UI_HTML     = readFileSync(join(import.meta.dir, 'ui/index.html'),  'utf-8');
-const EDITOR_HTML = readFileSync(join(import.meta.dir, 'ui/editor.html'), 'utf-8');
+const LANDING_HTML = readFileSync(join(import.meta.dir, 'ui/landing.html'), 'utf-8');
+const UI_HTML      = readFileSync(join(import.meta.dir, 'ui/index.html'),   'utf-8');
+const EDITOR_HTML  = readFileSync(join(import.meta.dir, 'ui/editor.html'),  'utf-8');
 
 // ── Request handlers ──────────────────────────────────────────────────────────
 
@@ -86,8 +87,13 @@ const server = Bun.serve({
       return json({ ok: true, apiKeySet: hasApiKey(), model: process.env.LLM_MODEL ?? 'gpt-4o-mini' });
     }
 
-    // Main UI
+    // Landing page
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+      return new Response(LANDING_HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+
+    // SOP generator
+    if (req.method === 'GET' && url.pathname === '/generate') {
       return new Response(UI_HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
 
