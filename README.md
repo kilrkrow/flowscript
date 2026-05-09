@@ -14,7 +14,7 @@ A diagram-as-code DSL that renders clean, Visio-quality flowcharts from human-re
     #end Registration Complete
 ```
 
-**[Try the Live Editor →](https://www.perplexity.ai/computer/a/flowscript-live-editor-rxkmC_zBQVOO5UnEU9dCRw)**
+**[Try the Live Editor →](https://flowscript.foxanddoveconsulting)**
 
 ---
 
@@ -31,7 +31,9 @@ A diagram-as-code DSL that renders clean, Visio-quality flowcharts from human-re
 - **Groups** — logical grouping with labeled containers
 - **Comments** — `//` line comments anywhere
 - **Frontmatter** — YAML-style metadata header (`title`, `author`, etc.)
-- **Export** — SVG output (PNG/PDF planned)
+- **Export** — SVG output, clipboard copy (PNG planned)
+- **MCP server** — `compile_flow` and `render_flow` tools for AI agent integration
+- **SOP generator** — self-hosted Docker service: paste/upload/URL → LLM extraction → diagram
 
 ---
 
@@ -342,7 +344,16 @@ flowscript/
 │   │       └── index.ts      # Shape renderers (11 types)
 │   └── themes/
 │       └── clean.ts          # Default theme
-├── editor/                   # Live browser editor (Monaco)
+├── src/
+│   └── mcp-server.ts         # MCP server (compile_flow + render_flow tools)
+│   └── compiler/
+│       └── json-to-flow.ts   # JSON graph → .flow compiler (for LLM output)
+├── server/                   # Self-hosted SOP generator (Bun HTTP + Docker)
+│   ├── index.ts              # HTTP server (/generate, /status)
+│   ├── llm.ts                # OpenAI-compatible LLM extraction
+│   ├── extract.ts            # PDF/DOCX/URL/text extraction
+│   └── ui/index.html         # Web UI
+├── editor/                   # Browser bundle for live .flow editor
 ├── test/
 │   └── fixtures/             # Example .flow files
 ├── package.json
@@ -519,12 +530,18 @@ svg.querySelectorAll('.fs-node').forEach(g => {
 - [x] Relative-position-aware port scoring (clean L-shapes for diagonal source→decision routes)
 - [x] Visio-style line jumps for unavoidable orthogonal crossings (`@line-jumps off` to disable)
 - [x] Structured grid layout for TB (paper-cutout footprints, side-column branch placement, outer-channel skip routing)
+- [x] MCP server (`compile_flow` + `render_flow` tools over stdio)
+- [x] JSON graph → `.flow` compiler (`jsonToFlow()`) for LLM-generated diagrams
+- [x] Self-hosted SOP generator (Docker, OpenAI-compatible LLM, PDF/DOCX/URL/text ingestion)
+- [x] Auto-fallback to Dagre when grid layout produces column explosion
+- [ ] Generator + live editor unified into single app (one URL, "Edit .flow" button handoff)
+- [ ] PNG export (client-side canvas, download + clipboard)
+- [ ] CodeMirror editor with rename-all-instances (symbol rename) and syntax highlighting
 - [ ] Swimlane v2: inline cross-lane edges + `@lane-direction TB` for row-based orientation
 - [ ] Per-edge `jump` override / theme-level hop styling (radius, shape, color)
 - [ ] `#io` parallelogram custom ports (currently falls back to rect)
 - [ ] `opentype.js` text measurement (replacing character-width heuristic)
 - [ ] Dark theme
-- [ ] PNG and PDF export
 - [ ] Pre-laid-out AST mode (lightweight ~15KB browser bundle)
 - [ ] elkjs layout engine option (v2)
 - [ ] Animation / step-through playback
