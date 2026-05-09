@@ -19,7 +19,8 @@ import { extractFromUrl, extractFromFile } from './extract.js';
 import { extractGraph, hasApiKey } from './llm.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
-const UI_HTML = readFileSync(join(import.meta.dir, 'ui/index.html'), 'utf-8');
+const UI_HTML     = readFileSync(join(import.meta.dir, 'ui/index.html'),  'utf-8');
+const EDITOR_HTML = readFileSync(join(import.meta.dir, 'ui/editor.html'), 'utf-8');
 
 // ── Request handlers ──────────────────────────────────────────────────────────
 
@@ -88,6 +89,17 @@ const server = Bun.serve({
     // Main UI
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       return new Response(UI_HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+
+    // Live editor
+    if (req.method === 'GET' && url.pathname === '/editor') {
+      return new Response(EDITOR_HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+
+    // Browser bundle — served from the built editor/ directory
+    if (req.method === 'GET' && url.pathname === '/flowscript.js') {
+      const file = Bun.file(join(import.meta.dir, '../editor/flowscript.js'));
+      return new Response(file, { headers: { 'Content-Type': 'application/javascript; charset=utf-8' } });
     }
 
     // Generate endpoint

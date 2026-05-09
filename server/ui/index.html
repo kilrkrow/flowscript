@@ -352,6 +352,7 @@
         <button class="btn btn-sm" id="downloadSvg">Download SVG</button>
         <button class="btn btn-sm" id="downloadFlow">Download .flow</button>
         <button class="btn btn-sm" id="copyFlow" title="Copy .flow source to clipboard">📋 Copy .flow</button>
+        <button class="btn btn-sm" id="editFlow" title="Open in live editor">✏️ Edit .flow</button>
       </div>
     </div>
   </div>
@@ -531,6 +532,11 @@
       btn.textContent = '✓ Copied!';
       setTimeout(() => { btn.textContent = '📋 Copy .flow'; }, 2000);
     }
+  });
+
+  document.getElementById('editFlow').addEventListener('click', () => {
+    const url = '/editor#' + encodeURIComponent(lastFlow);
+    window.open(url, '_blank');
   });
 
   function download(filename, content, type) {

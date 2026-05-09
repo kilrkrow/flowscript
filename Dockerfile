@@ -12,6 +12,9 @@ ARG CACHEBUST=1
 COPY src/       ./src/
 COPY server/    ./server/
 
+# Build browser bundle fresh from source so /editor always matches src/
+RUN bun build src/index.ts --outfile editor/flowscript.js --target=browser --format=esm
+
 EXPOSE 3000
 
 ENV PORT=3000
