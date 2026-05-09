@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlowScript — Live Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0c0c0e;
+  --surface: #141416;
+  --surface-2: #1a1a1e;
+  --border: #2a2a30;
+  --border-light: #333338;
+  --text: #e4e2df;
+  --text-muted: #8a8a8e;
+  --text-faint: #55555a;
+  --accent: #20808D;
+  --accent-hover: #28969e;
+  --preview-bg: #1a1a2e;
+  --toolbar-h: 48px;
+}
+
+[data-theme="light"] {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-2: #f0f0f3;
+  --border: #d8d8de;
+  --border-light: #c8c8ce;
+  --text: #1a1a1e;
+  --text-muted: #6a6a72;
+  --text-faint: #a0a0a8;
+  --accent: #20808D;
+  --accent-hover: #28969e;
+  --preview-bg: #f8f8fa;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Toolbar ---- */
+.toolbar {
+  height: var(--toolbar-h);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  z-index: 10;
+}
+
+.toolbar .logo {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+  user-select: none;
+}
+.toolbar .logo span { color: var(--accent); }
+
+.toolbar .separator {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+}
+
+.toolbar select {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 28px 6px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238a8a8e'%3E%3Cpath d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.toolbar select:hover { border-color: var(--border-light); }
+
+.toolbar .spacer { flex: 1; }
+
+.toolbar button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.toolbar button:hover { background: var(--accent-hover); }
+
+/* Theme toggle — ghost button, sits left of Export */
+.toolbar .theme-toggle {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.toolbar .theme-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-light);
+}
+
+.toolbar .status {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* ---- Split Pane ---- */
+.split-container {
+  display: flex;
+  height: calc(100vh - var(--toolbar-h));
+}
+
+.editor-pane {
+  width: 50%;
+  min-width: 280px;
+  position: relative;
+  border-right: 1px solid var(--border);
+}
+
+.preview-pane {
+  width: 50%;
+  min-width: 280px;
+  position: relative;
+  background: var(--preview-bg);
+  overflow: auto;
+  transition: background 0.2s;
+}
+
+/* Drag handle */
+.drag-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  background: transparent;
+}
+.drag-handle:hover,
+.drag-handle.active {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+/* Monaco fills the editor pane */
+#editor {
+  width: 100%;
+  height: 100%;
+}
+
+/* Preview */
+.preview-content {
+  padding: 32px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 100%;
+}
+.preview-content svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Error overlay */
+.error-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #2a1215;
+  border-top: 1px solid #5c2d33;
+  color: #f08080;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace, monospace;
+  padding: 8px 16px;
+  display: none;
+  z-index: 10;
+}
+.error-bar.visible { display: block; }
+
+/* Zoom controls */
+.zoom-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  gap: 4px;
+  z-index: 5;
+}
+.zoom-controls button {
+  width: 32px;
+  height: 32px;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.zoom-controls button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* ---- Step-through / Highlight states ---- */
+.fs-node {
+  transition: opacity 0.3s, transform 0.3s;
+  cursor: pointer;
+}
+.fs-edge {
+  transition: opacity 0.3s;
+}
+
+/* Dim everything when something is active */
+.fs-diagram.has-active .fs-node { opacity: 0.25; }
+.fs-diagram.has-active .fs-edge { opacity: 0.15; }
+
+/* Active node - full focus */
+.fs-node.active {
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+.fs-node.active rect,
+.fs-node.active polygon,
+.fs-node.active circle,
+.fs-node.active path {
+  stroke: var(--accent) !important;
+  stroke-width: 3px !important;
+}
+
+/* Visited (predecessors) */
+.fs-node.visited {
+  opacity: 0.8 !important;
+}
+.fs-node.visited rect,
+.fs-node.visited polygon,
+.fs-node.visited circle,
+.fs-node.visited path {
+  stroke: #4f98a3 !important;
+  fill: #f0f9fa !important;
+}
+.fs-edge.visited .fs-edge-path {
+  stroke-width: 2px !important;
+  opacity: 0.8;
+}
+
+/* Upcoming (successors) */
+.fs-node.upcoming {
+  opacity: 0.7 !important;
+}
+.fs-node.upcoming rect,
+.fs-node.upcoming polygon,
+.fs-node.upcoming circle,
+.fs-node.upcoming path {
+  stroke-dasharray: 4 2 !important;
+}
+.fs-edge.active .fs-edge-path {
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 3px var(--accent));
+}
+.fs-edge.upcoming .fs-edge-path {
+  stroke-dasharray: 4,2 !important;
+  stroke-width: 2.5px !important;
+}
+</style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <div class="logo">Flow<span>Script</span></div>
+  <div class="separator"></div>
+  <select id="examples">
+    <option value="">Examples...</option>
+    <option value="registration">User Registration</option>
+    <option value="security" selected>Security Incident (New)</option>
+    <option value="benchmark">SaaS Onboarding (Grid)</option>
+    <option value="benchmark-dagre">SaaS Onboarding (Dagre)</option>
+    <option value="minimal">Minimal</option>
+  </select>
+  <div class="separator"></div>
+  <select id="diagramTheme" title="Diagram theme">
+    <option value="clean">Diagram: Light</option>
+    <option value="clean-dark" selected>Diagram: Dark</option>
+  </select>
+  <div class="spacer"></div>
+  <span class="status" id="status"></span>
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">🌙</button>
+  <button id="exportBtn">Export SVG</button>
+</div>
+
+<!-- Split Pane -->
+<div class="split-container">
+  <div class="editor-pane" id="editorPane">
+    <div id="editor"></div>
+    <div class="drag-handle" id="dragHandle"></div>
+  </div>
+  <div class="preview-pane" id="previewPane">
+    <div class="preview-content" id="preview"></div>
+    <div class="error-bar" id="errorBar"></div>
+    <div class="zoom-controls">
+      <button id="zoomIn" title="Zoom in">+</button>
+      <button id="zoomOut" title="Zoom out">−</button>
+      <button id="zoomFit" title="Fit to view">⊡</button>
+    </div>
+  </div>
+</div>
+
+<!-- Monaco Editor from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+
+<!-- FlowScript bundle -->
+<script type="module">
+import { render, resolveTheme } from './flowscript.js';
+
+// ============================================================
+// Example diagrams
+// ============================================================
+const EXAMPLES = {
+  registration: `---
+title: User Registration Flow
+---
+
+@theme clean
+@direction TB
+
+#start User Visits Signup Page
+
+  Enter Email & Password
+  #decision Email Already Exists?
+    -> yes: Show Error Message
+    -> no: Create Account
+
+  Show Error Message -> Enter Email & Password: "try again"
+
+  Create Account
+    Send Verification Email
+    #delay Wait for Verification
+
+  #decision Email Verified?
+    -> yes: Activate Account
+    -> no: #delay Wait for Verification: "resend"
+
+  Activate Account
+    Send Welcome Email
+    #end Registration Complete`,
+
+  security: `---
+title: Security Incident Workflow
+---
+
+@theme clean
+@direction TB
+@layout grid
+
+#start Start
+Review CCTV footage. 
+
+#decision Is there a security incident?
+  -> Yes: Call Police
+  -> No: Document
+
+Call Police
+Observe until police arrive
+
+#decision Police arrived?
+  -> Yes: Monitor until resolved.
+  ~> No: Observe until police arrive
+
+Monitor until resolved.
+
+#decision Resolved?
+  -> Yes: #end Done
+  ~> No: Monitor until resolved.
+
+Document
+-> Done`,
+
+  deploy: `---
+title: CI/CD Deployment Pipeline
+---
+
+@direction TB
+
+#start Push to Main
+
+  Run Unit Tests
+  #decision Tests Pass?
+    -> yes: Build Docker Image
+    -> no: Notify Developer
+
+  Notify Developer
+  #end Fix Required
+
+  Build Docker Image
+    Push to Registry
+    Deploy to Staging
+
+  #decision Smoke Tests Pass?
+    -> yes: Deploy to Production
+    -> no: Rollback Staging
+
+  Rollback Staging -> Notify Developer: "alert"
+
+  Deploy to Production
+    Run Health Checks
+
+  #decision Healthy?
+    -> yes: #end Done
+    -> no: Rollback Production
+
+  Rollback Production -> Notify Developer: "critical"`,
+
+  support: `---
+title: Support Ticket Flow
+---
+
+@direction TB
+
+#start Ticket Created
+
+  #decision Priority?
+    -> P1: Page On-Call Engineer
+    -> P2: Assign to Team Lead
+    -> P3: Add to Backlog
+
+  Page On-Call Engineer
+    Investigate Issue
+    #decision Resolved?
+      -> yes: Close Ticket
+      -> no: Escalate to Engineering
+
+  Assign to Team Lead
+    Triage & Assign
+    Investigate Issue
+
+  Add to Backlog
+    #delay Wait for Sprint
+    Triage & Assign
+
+  Escalate to Engineering
+    Create JIRA Ticket
+    #delay Await Fix
+    Deploy Fix
+    Verify Resolution
+
+  #decision Verified?
+    -> yes: Close Ticket
+    -> no: Escalate to Engineering: "reopen"
+
+  Close Ticket
+    Send Resolution Email
+    #end Resolved`,
+
+  swimlanes: `---
+title: Incident Response Flow
+---
+
+@theme clean
+@direction TB
+
+#lane Customer
+  #start Report Issue
+  Provide Details
+  #end Resolved
+
+#lane Support Agent
+  Triage Ticket
+  #decision Severity?
+    -> high: Escalate to Engineering
+    -> low: Apply Known Fix
+
+#lane Engineering
+  Investigate Root Cause
+  Deploy Fix
+
+#lane System
+  Run Automated Tests
+  #decision Tests Pass?
+    -> yes: Close Ticket
+    -> no: Investigate Root Cause
+
+// Cross-lane edges (explicit)
+Provide Details -> Triage Ticket
+Apply Known Fix -> Close Ticket
+Escalate to Engineering -> Investigate Root Cause
+Deploy Fix -> Run Automated Tests
+Close Ticket -> Resolved`,
+
+  minimal: `#start Hello
+  World
+  #decision Like it?
+    -> yes: #end Ship It
+    -> no: Try Again
+  Try Again -> World`,
+
+  benchmark: `---
+title: SaaS Onboarding Flow
+---
+
+@theme clean
+@direction TB
+@layout grid
+
+#start Create Account
+Complete Profile
+
+#decision Profile complete?
+  -> 'Yes' Connect Integrations
+  -> 'No' Complete Profile
+
+Connect Integrations
+
+#decision Integrations working?
+  -> 'Yes' #circle Setup Complete
+  -> 'No' Review Integration Guide
+
+#circle Setup Complete
+
+#decision Ready to invite team?
+  -> 'Yes' Invite Team Members
+  -> 'No' Explore Solo
+
+Invite Team Members
+Run Team Walkthrough
+
+#decision Team onboarded?
+  -> 'Yes' Go Live
+  ~> 'No' Run Team Walkthrough
+
+Go Live
+#circle Now Live
+#end Onboarding Complete
+
+// Remediation path
+Review Integration Guide
+Check API Credentials
+Retry Connection
+
+#decision Connection successful?
+  -> 'Yes' #circle Setup Complete
+  ~> 'No' Review Integration Guide
+
+// Solo exploration path
+Explore Solo
+#end Start Free Trial`,
+
+  'benchmark-dagre': `---
+title: SaaS Onboarding Flow (Dagre)
+---
+
+@theme clean
+@direction TB
+@layout dagre
+
+#start Create Account
+Complete Profile
+
+#decision Profile complete?
+  -> 'Yes' Connect Integrations
+  -> 'No' Complete Profile
+
+Connect Integrations
+
+#decision Integrations working?
+  -> 'Yes' #circle Setup Complete
+  -> 'No' Review Integration Guide
+
+#circle Setup Complete
+
+#decision Ready to invite team?
+  -> 'Yes' Invite Team Members
+  -> 'No' Explore Solo
+
+Invite Team Members
+Run Team Walkthrough
+
+#decision Team onboarded?
+  -> 'Yes' Go Live
+  ~> 'No' Run Team Walkthrough
+
+Go Live
+#circle Now Live
+#end Onboarding Complete
+
+// Remediation path
+Review Integration Guide
+Check API Credentials
+Retry Connection
+
+#decision Connection successful?
+  -> 'Yes' #circle Setup Complete
+  ~> 'No' Review Integration Guide
+
+// Solo exploration path
+Explore Solo
+#end Start Free Trial`
+};
+
+// ============================================================
+// State
+// ============================================================
+let editor = null;
+let currentZoom = 1;
+let renderTimer = null;
+let lastSvg = '';
+// Diagram theme — independent of shell light/dark toggle.
+// Defaults to match the initial shell theme (set by initTheme before Monaco loads).
+let diagramThemeName = localStorage.getItem('fs-diagram-theme') ?? 'clean-dark';
+
+// ============================================================
+// Monaco setup
+// ============================================================
+window.require.config({
+  paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' }
+});
+
+window.require(['vs/editor/editor.main'], function (monaco) {
+  window._monaco = monaco; // expose for theme toggle
+  // Register FlowScript language
+  monaco.languages.register({ id: 'flowscript' });
+
+  monaco.languages.setMonarchTokensProvider('flowscript', {
+    tokenizer: {
+      root: [
+        // Comments
+        [/\/\/.*$/, 'comment'],
+        // Frontmatter delimiters
+        [/^---\s*$/, 'keyword'],
+        // Directives
+        [/@(theme|direction|spacing|font|routing|corner-radius|connections)\b/, 'keyword'],
+        // Node IDs
+        [/@[a-zA-Z_]\w*/, 'variable'],
+        // Shape keywords
+        [/#(start|end|decision|process|subprocess|io|data|circle|note|group|manual|delay)\b/, 'type'],
+        // Arrow
+        [/->/, 'operator'],
+        // Strings
+        [/"[^"]*"/, 'string'],
+        // Frontmatter keys (inside frontmatter)
+        [/^[a-zA-Z_][\w-]*(?=\s*:)/, 'attribute.name'],
+        // Condition labels (yes, no, etc. before colon after arrow)
+        [/\b(yes|no|true|false)\b(?=\s*:)/, 'string'],
+      ],
+    },
+  });
+
+  // Define themes
+  monaco.editor.defineTheme('flowscript-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '546e7a', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '89ddff' },
+      { token: 'type', foreground: 'c792ea' },
+      { token: 'operator', foreground: 'f78c6c' },
+      { token: 'string', foreground: 'c3e88d' },
+      { token: 'variable', foreground: 'ffcb6b' },
+      { token: 'attribute.name', foreground: '82aaff' },
+    ],
+    colors: {
+      'editor.background': '#141416',
+      'editor.foreground': '#d4d4d8',
+      'editorLineNumber.foreground': '#3a3a42',
+      'editorLineNumber.activeForeground': '#6a6a72',
+      'editor.lineHighlightBackground': '#1a1a1e',
+      'editor.selectionBackground': '#20808D44',
+      'editorCursor.foreground': '#20808D',
+      'editorWidget.background': '#1a1a1e',
+    },
+  });
+
+  monaco.editor.defineTheme('flowscript-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '78909c', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '0277bd' },
+      { token: 'type', foreground: '6a1b9a' },
+      { token: 'operator', foreground: 'e64a19' },
+      { token: 'string', foreground: '2e7d32' },
+      { token: 'variable', foreground: 'e65100' },
+      { token: 'attribute.name', foreground: '1565c0' },
+    ],
+    colors: {
+      'editor.background': '#ffffff',
+      'editor.foreground': '#1a1a1e',
+      'editorLineNumber.foreground': '#c0c0c8',
+      'editorLineNumber.activeForeground': '#8a8a92',
+      'editor.lineHighlightBackground': '#f0f0f3',
+      'editor.selectionBackground': '#20808D22',
+      'editorCursor.foreground': '#20808D',
+      'editorWidget.background': '#f0f0f3',
+    },
+  });
+
+  // Create editor — use whichever theme was already set by initTheme()
+  const initialMonacoTheme = (document.documentElement.dataset.theme === 'light')
+    ? 'flowscript-light' : 'flowscript-dark';
+  editor = monaco.editor.create(document.getElementById('editor'), {
+    value: EXAMPLES.security,
+    language: 'flowscript',
+    theme: initialMonacoTheme,
+    fontSize: 14,
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+    lineNumbers: 'on',
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    wordWrap: 'on',
+    automaticLayout: true,
+    padding: { top: 16 },
+    renderLineHighlight: 'line',
+    tabSize: 2,
+    insertSpaces: true,
+    smoothScrolling: true,
+    cursorBlinking: 'smooth',
+    bracketPairColorization: { enabled: false },
+  });
+
+  // Highlight node on cursor move
+  editor.onDidChangeCursorPosition((e) => {
+    highlightNodeAtLine(e.position.lineNumber);
+  });
+
+  // Live render on change
+  editor.onDidChangeModelContent(() => {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(doRender, 250);
+  });
+
+  // Initial render
+  doRender();
+});
+
+// ============================================================
+// Render
+// ============================================================
+function doRender() {
+  const source = editor?.getValue() ?? '';
+  const preview = document.getElementById('preview');
+  const errorBar = document.getElementById('errorBar');
+  const status = document.getElementById('status');
+
+  if (!source.trim()) {
+    preview.innerHTML = '<p style="color:#999;font-size:14px;font-family:Inter,sans-serif;">Type FlowScript on the left...</p>';
+    errorBar.classList.remove('visible');
+    status.textContent = '';
+    return;
+  }
+
+  const t0 = performance.now();
+  try {
+    const svg = render(source, { theme: resolveTheme(diagramThemeName) });
+    const elapsed = (performance.now() - t0).toFixed(1);
+    lastSvg = svg;
+
+    preview.innerHTML = svg;
+    errorBar.classList.remove('visible');
+
+    // Apply zoom
+    const svgEl = preview.querySelector('svg');
+    if (svgEl) {
+      svgEl.style.transform = `scale(${currentZoom})`;
+      svgEl.style.transformOrigin = 'top center';
+    }
+
+    // Count nodes/edges from the SVG
+    const nodes = preview.querySelectorAll('.fs-node').length;
+    const edges = preview.querySelectorAll('.fs-edge').length;
+    status.textContent = `${nodes} nodes · ${edges} edges · ${elapsed}ms`;
+
+    // Re-apply highlight if cursor is still there
+    if (editor) {
+      highlightNodeAtLine(editor.getPosition().lineNumber);
+    }
+  } catch (err) {
+    errorBar.textContent = err.message || String(err);
+    errorBar.classList.add('visible');
+    status.textContent = 'Error';
+  }
+}
+
+// ============================================================
+// Highlighting logic
+// ============================================================
+function highlightNodeAtLine(lineNumber, windowBefore = 1, windowAfter = 1) {
+  const svg = document.querySelector('.fs-diagram');
+  if (!svg) return;
+
+  // Clear previous highlights
+  svg.classList.remove('has-active');
+  svg.querySelectorAll('.active, .visited, .upcoming').forEach(el => {
+    el.classList.remove('active', 'visited', 'upcoming');
+  });
+
+  // Find node at this line
+  const node = svg.querySelector(`[data-line="${lineNumber}"]`);
+  if (!node) return;
+
+  const nodeId = node.getAttribute('data-node-id');
+  svg.classList.add('has-active');
+  node.classList.add('active');
+
+  const visitedNodes = new Set();
+  const visitedEdges = new Set();
+  const upcomingNodes = new Set();
+  const upcomingEdges = new Set();
+
+  // Trace back N steps
+  function traceBack(id, depth) {
+    if (depth <= 0) return;
+    svg.querySelectorAll(`.fs-edge[data-to="${id}"]`).forEach(edge => {
+      visitedEdges.add(edge);
+      const fromId = edge.getAttribute('data-from');
+      visitedNodes.add(fromId);
+      traceBack(fromId, depth - 1);
+    });
+  }
+
+  // Trace forward M steps
+  function traceForward(id, depth) {
+    if (depth <= 0) return;
+    svg.querySelectorAll(`.fs-edge[data-from="${id}"]`).forEach(edge => {
+      upcomingEdges.add(edge);
+      const toId = edge.getAttribute('data-to');
+      upcomingNodes.add(toId);
+      traceForward(toId, depth - 1);
+    });
+  }
+
+  traceBack(nodeId, windowBefore);
+  traceForward(nodeId, windowAfter);
+
+  // Apply classes
+  visitedNodes.forEach(id => {
+    const el = svg.querySelector(`[data-node-id="${id}"]`);
+    if (el) el.classList.add('visited');
+  });
+  visitedEdges.forEach(el => el.classList.add('visited'));
+
+  upcomingNodes.forEach(id => {
+    const el = svg.querySelector(`[data-node-id="${id}"]`);
+    if (el) el.classList.add('upcoming');
+  });
+  upcomingEdges.forEach(el => el.classList.add('upcoming'));
+
+  // Ensure active node is visible
+  node.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+}
+
+// ============================================================
+// Examples dropdown
+// ============================================================
+document.getElementById('examples').addEventListener('change', (e) => {
+  const key = e.target.value;
+  if (key && EXAMPLES[key] && editor) {
+    editor.setValue(EXAMPLES[key]);
+    currentZoom = 1;
+  }
+});
+
+// ============================================================
+// Export SVG
+// ============================================================
+document.getElementById('exportBtn').addEventListener('click', () => {
+  if (!lastSvg) return;
+  const blob = new Blob([lastSvg], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'flowscript-diagram.svg';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ============================================================
+// Zoom controls
+// ============================================================
+document.getElementById('zoomIn').addEventListener('click', () => {
+  currentZoom = Math.min(currentZoom + 0.2, 3);
+  applyZoom();
+});
+document.getElementById('zoomOut').addEventListener('click', () => {
+  currentZoom = Math.max(currentZoom - 0.2, 0.3);
+  applyZoom();
+});
+document.getElementById('zoomFit').addEventListener('click', () => {
+  currentZoom = 1;
+  applyZoom();
+});
+
+function applyZoom() {
+  const svgEl = document.querySelector('#preview svg');
+  if (svgEl) {
+    svgEl.style.transform = `scale(${currentZoom})`;
+    svgEl.style.transformOrigin = 'top center';
+  }
+}
+
+// ============================================================
+// Resizable split pane
+// ============================================================
+const dragHandle = document.getElementById('dragHandle');
+const editorPane = document.getElementById('editorPane');
+const previewPane = document.getElementById('previewPane');
+let isDragging = false;
+
+dragHandle.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  dragHandle.classList.add('active');
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const container = document.querySelector('.split-container');
+  const rect = container.getBoundingClientRect();
+  const pct = ((e.clientX - rect.left) / rect.width) * 100;
+  const clamped = Math.max(20, Math.min(80, pct));
+  editorPane.style.width = clamped + '%';
+  previewPane.style.width = (100 - clamped) + '%';
+});
+
+document.addEventListener('mouseup', () => {
+  if (isDragging) {
+    isDragging = false;
+    dragHandle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
+});
+
+// ============================================================
+// Light / dark toggle
+// ============================================================
+const themeToggle = document.getElementById('themeToggle');
+
+const diagramThemeSelect = document.getElementById('diagramTheme');
+
+function applyDiagramTheme(name) {
+  diagramThemeName = name;
+  diagramThemeSelect.value = name;
+  localStorage.setItem('fs-diagram-theme', name);
+  doRender();
+}
+
+function applyTheme(theme, monacoInstance) {
+  document.documentElement.dataset.theme = theme;
+  themeToggle.textContent = theme === 'light' ? '🌙' : '☀︎';
+  themeToggle.title = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+  if (monacoInstance) {
+    monacoInstance.editor.setTheme(
+      theme === 'light' ? 'flowscript-light' : 'flowscript-dark'
+    );
+  }
+  localStorage.setItem('fs-theme', theme);
+  // Sync diagram theme with shell theme (unless user has manually overridden it)
+  if (!localStorage.getItem('fs-diagram-theme-manual')) {
+    applyDiagramTheme(theme === 'light' ? 'clean' : 'clean-dark');
+  }
+}
+
+// Initialise from localStorage or system preference, but defer until Monaco ready.
+// Monaco instance is captured via the global set during editor setup.
+function initTheme() {
+  const saved = localStorage.getItem('fs-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const initial = saved ?? (prefersDark ? 'dark' : 'light');
+  // Monaco may not be ready yet — set CSS immediately, Monaco theme set by applyTheme call
+  // inside window.require callback after editor creation (see below).
+  document.documentElement.dataset.theme = initial;
+  themeToggle.textContent = initial === 'light' ? '🌙' : '☀︎';
+  themeToggle.title = initial === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+  // Sync diagram theme dropdown to saved or shell-derived value
+  diagramThemeSelect.value = diagramThemeName;
+}
+initTheme();
+
+themeToggle.addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  // Clear manual override so the toggle re-links shell and diagram themes
+  localStorage.removeItem('fs-diagram-theme-manual');
+  applyTheme(next, window._monaco);
+});
+
+// Diagram theme dropdown — user can decouple from shell theme
+diagramThemeSelect.addEventListener('change', (e) => {
+  // Mark as manually overridden so the shell toggle stops auto-syncing
+  localStorage.setItem('fs-diagram-theme-manual', '1');
+  applyDiagramTheme(e.target.value);
+});
+</script>
+
+</body>
+</html>
