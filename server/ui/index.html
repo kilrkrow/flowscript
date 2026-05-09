@@ -351,6 +351,7 @@
       <div class="output-actions">
         <button class="btn btn-sm" id="downloadSvg">Download SVG</button>
         <button class="btn btn-sm" id="downloadFlow">Download .flow</button>
+        <button class="btn btn-sm" id="copyFlow" title="Copy .flow source to clipboard">📋 Copy .flow</button>
       </div>
     </div>
   </div>
@@ -503,13 +504,33 @@
     document.getElementById('errorBox').style.display = 'none';
   }
 
-  // ── Downloads ──────────────────────────────────────────────────────────────
+  // ── Downloads & clipboard ─────────────────────────────────────────────────
   document.getElementById('downloadSvg').addEventListener('click', () => {
     download('diagram.svg', lastSvg, 'image/svg+xml');
   });
 
   document.getElementById('downloadFlow').addEventListener('click', () => {
     download('diagram.flow', lastFlow, 'text/plain');
+  });
+
+  document.getElementById('copyFlow').addEventListener('click', async () => {
+    const btn = document.getElementById('copyFlow');
+    try {
+      await navigator.clipboard.writeText(lastFlow);
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = '📋 Copy .flow'; }, 2000);
+    } catch {
+      // Fallback: select a temporary textarea
+      const ta = document.createElement('textarea');
+      ta.value = lastFlow;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = '📋 Copy .flow'; }, 2000);
+    }
   });
 
   function download(filename, content, type) {
