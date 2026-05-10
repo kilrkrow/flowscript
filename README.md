@@ -550,4 +550,8 @@ svg.querySelectorAll('.fs-node').forEach(g => {
 
 ## License
 
-AGL
+[Elastic License 2.0 (ELv2)](LICENSE)
+
+Free to use, self-host, and build on — including for commercial internal use.
+You may not offer FlowScript itself as a hosted or managed service to third parties.
+See the [LICENSE](LICENSE) file for full terms.

@@ -468,11 +468,11 @@ footer p { font-size: 12px; color: var(--faint); }
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-badge">Open source · MIT · Self-hostable</div>
-  <h1>Type it.<br><em>See it.</em><br>Ship it.</h1>
-  <p class="hero-sub">Turn SOPs, runbooks, and procedures into clean, Visio-quality flowcharts — write a few lines of text, or let AI do the extraction.</p>
+  <div class="hero-badge">ELv2 Licensed · Free to self-host · Open source</div>
+  <h1>Type it.<br>See it.<br><em>Ship it.</em></h1>
+  <p class="hero-sub">Paste the URL. Upload the file. Drop in the email. Whatever form your process lives in — Word doc, PDF, wiki page, or plain text — FlowScript extracts the steps and hands you back a clean, editable flowchart. No drawing. No dragging boxes.</p>
   <div class="hero-actions">
-    <a href="editor.html" class="btn-primary">✏️ Try the Live Editor</a>
+    <a href="editor.html" class="btn-primary">✏️ Try it free — no account needed</a>
     <a href="https://github.com/kilrkrow/flowscript" target="_blank" class="btn-secondary">⭐ View on GitHub</a>
   </div>
 </section>
@@ -509,7 +509,39 @@ Write Post-Mortem
 <span class="kw">#end</span> Incident Closed</pre>
     </div>
     <div class="demo-preview" id="demoPreview">
-      <!-- SVG rendered by flowscript.js on load -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="-460 -40 968 1062" style="max-width:100%;height:auto;max-height:380px" class="fs-diagram">
+  <defs>
+    <marker id="fs-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#5a5a62"/></marker>
+    <marker id="fs-arrow-yes" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#2e7d32"/></marker>
+    <marker id="fs-arrow-no" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#c62828"/></marker>
+    <marker id="fs-arrow-retry" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#7e57c2"/></marker>
+    <filter id="fs-shadow" x="-4%" y="-4%" width="108%" height="112%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#00000018"/></filter>
+  </defs>
+  <g class="fs-edges">
+    <g class="fs-edge" data-from="n1" data-to="n2"><path d="M0,56 L0,116" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/></g>
+    <g class="fs-edge" data-from="n2" data-to="n3"><path d="M0,174 L0,234" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/></g>
+    <g class="fs-edge" data-from="n3" data-to="n4"><path d="M0,344 L0,404" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/><rect x="-13.5" y="364" width="27" height="20" rx="4" fill="#ffffff" stroke="none" opacity="1"/><text x="0" y="374" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" class="fs-edge-label">P1</text></g>
+    <g class="fs-edge" data-from="n3" data-to="n5"><path d="M-90,289 L-312,289 Q-320,289 -320,297 L-320,405" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/><rect x="-276.5" y="279" width="27" height="20" rx="4" fill="#ffffff" stroke="none" opacity="1"/><text x="-263" y="289" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" class="fs-edge-label">P2</text></g>
+    <g class="fs-edge" data-from="n3" data-to="n6"><path d="M90,289 L312,289 Q320,289 320,297 L320,405" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/><rect x="249.5" y="279" width="27" height="20" rx="4" fill="#ffffff" stroke="none" opacity="1"/><text x="263" y="289" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" class="fs-edge-label">P3</text></g>
+    <g class="fs-edge" data-from="n4" data-to="n7"><path d="M0,462 L0,522" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/></g>
+    <g class="fs-edge" data-from="n7" data-to="n8"><path d="M0,580 L0,640" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/></g>
+    <g class="fs-edge" data-from="n8" data-to="n9"><path d="M0,750 L0,810" fill="none" stroke="#2e7d32" stroke-width="1.5" marker-end="url(#fs-arrow-yes)" class="fs-edge-path fs-edge-yes"/><rect x="-17.25" y="770" width="34.5" height="20" rx="4" fill="#ffffff" stroke="none" opacity="1"/><text x="0" y="780" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" class="fs-edge-label">yes</text></g>
+    <g class="fs-edge" data-from="n8" data-to="n7"><path d="M90,695 L460,695 Q468,695 468,687 L468,559 Q468,551 460,551 L100,551" fill="none" stroke="#c62828" stroke-width="1.5" marker-end="url(#fs-arrow-no)" class="fs-edge-path fs-edge-no" stroke-dasharray="6,3"/><rect x="454.5" y="618" width="27" height="20" rx="4" fill="#ffffff" stroke="none" opacity="1"/><text x="468" y="628" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="11" font-weight="600" fill="#e65100" class="fs-edge-label">no</text></g>
+    <g class="fs-edge" data-from="n9" data-to="n10"><path d="M0,866 L0,926" fill="none" stroke="#5a5a62" stroke-width="1.5" marker-end="url(#fs-arrow)" class="fs-edge-path"/></g>
+  </g>
+  <g class="fs-nodes">
+    <g class="fs-node" data-node-id="n1" data-shape="start"><g filter="url(#fs-shadow)"><rect x="-100" y="0" width="200" height="56" rx="28" fill="#d4edda" stroke="#4caf50" stroke-width="1.2"/></g><text x="0" y="28" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#2e7d32" class="fs-label">Alert Received</text></g>
+    <g class="fs-node" data-node-id="n2" data-shape="process"><g filter="url(#fs-shadow)"><rect x="-100" y="116" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/></g><text x="0" y="136.5" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label"><tspan x="0" dy="0">Review monitoring</tspan><tspan x="0" dy="16.9">dashboard</tspan></text></g>
+    <g class="fs-node" data-node-id="n3" data-shape="decision"><g filter="url(#fs-shadow)"><polygon points="0,234 100,289 0,344 -100,289" fill="#fff8e1" stroke="#f9a825" stroke-width="1.2"/></g><text x="0" y="289" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#e65100" class="fs-label">Severity?</text></g>
+    <g class="fs-node" data-node-id="n4" data-shape="process"><g filter="url(#fs-shadow)"><rect x="-100" y="404" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/></g><text x="0" y="433" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Page On-Call Engineer</text></g>
+    <g class="fs-node" data-node-id="n5" data-shape="process"><g filter="url(#fs-shadow)"><rect x="-420" y="405" width="200" height="56" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/></g><text x="-320" y="433" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Assign to Team Lead</text></g>
+    <g class="fs-node" data-node-id="n6" data-shape="process"><g filter="url(#fs-shadow)"><rect x="220" y="405" width="200" height="56" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/></g><text x="320" y="433" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Add to Backlog</text></g>
+    <g class="fs-node" data-node-id="n7" data-shape="process"><g filter="url(#fs-shadow)"><rect x="-100" y="522" width="200" height="58" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/></g><text x="0" y="551" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Investigate &amp; Mitigate</text></g>
+    <g class="fs-node" data-node-id="n8" data-shape="decision"><g filter="url(#fs-shadow)"><polygon points="0,640 100,695 0,750 -100,695" fill="#fff8e1" stroke="#f9a825" stroke-width="1.2"/></g><text x="0" y="695" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#e65100" class="fs-label">Resolved?</text></g>
+    <g class="fs-node" data-node-id="n9" data-shape="process"><g filter="url(#fs-shadow)"><rect x="-100" y="810" width="200" height="56" rx="6" fill="#ffffff" stroke="#d0d0d6" stroke-width="1.2"/></g><text x="0" y="838" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#28251D" class="fs-label">Write Post-Mortem</text></g>
+    <g class="fs-node" data-node-id="n10" data-shape="end"><g filter="url(#fs-shadow)"><rect x="-100" y="926" width="200" height="56" rx="28" fill="#eceff1" stroke="#78909c" stroke-width="1.2"/></g><text x="0" y="954" text-anchor="middle" dominant-baseline="central" font-family="'Inter', system-ui, sans-serif" font-size="13" font-weight="500" fill="#37474f" class="fs-label">Incident Closed</text></g>
+  </g>
+</svg>
     </div>
   </div>
 </div>
@@ -522,19 +554,19 @@ Write Post-Mortem
 
   <div class="steps">
     <div class="step">
-      <div class="step-num">01 — WRITE</div>
-      <h3>Author in FlowScript DSL</h3>
-      <p>A readable, indentation-driven syntax. Decisions branch naturally, loops reference earlier steps by name, and swimlanes add actors with one keyword.</p>
+      <div class="step-num">01 — GENERATE</div>
+      <h3>From a process document, get a diagram</h3>
+      <p>Got a process in a Word doc, PDF, email, wiki page, or plain text? Paste it or upload it. The generator reads whatever form it's in, extracts the process, and renders a clean diagram. One click — no drawing required.</p>
     </div>
     <div class="step">
-      <div class="step-num">02 — GENERATE</div>
-      <h3>Paste a document, get a diagram</h3>
-      <p>Upload a PDF, DOCX, or paste a URL. The self-hosted generator calls your LLM, extracts the process graph, and renders it in one click.</p>
+      <div class="step-num">02 — REFINE</div>
+      <h3>Edit in the live editor</h3>
+      <p>The generated <code>.flow</code> opens in a Monaco-powered editor with live SVG preview. Tweak labels, add branches, fix the edges AI got wrong — syntax highlighting included.</p>
     </div>
     <div class="step">
-      <div class="step-num">03 — INTEGRATE</div>
-      <h3>Use the MCP or API</h3>
-      <p>Wire FlowScript into your AI agent via MCP (<code>compile_flow</code>, <code>render_flow</code>), or call <code>jsonToFlow()</code> directly from your TypeScript code.</p>
+      <div class="step-num">03 — OWN IT</div>
+      <h3>Self-host or integrate</h3>
+      <p>One Docker container, your LLM key. Or skip the UI entirely — use the MCP server (<code>compile_flow</code>, <code>render_flow</code>) or call <code>render()</code> directly in TypeScript.</p>
     </div>
   </div>
 </section>
@@ -647,45 +679,13 @@ const svg = render(`
 
 <!-- Footer -->
 <footer>
-  <p>FlowScript · MIT License · <a href="https://foxanddoveconsulting.com" target="_blank" style="color:var(--faint);text-decoration:none;">Fox & Dove Consulting</a></p>
+  <p>FlowScript · <a href="https://github.com/kilrkrow/flowscript/blob/master/LICENSE" target="_blank" style="color:var(--faint);text-decoration:none;">Elastic License 2.0</a> · <a href="https://foxanddoveconsulting.com" target="_blank" style="color:var(--faint);text-decoration:none;">Fox & Dove Consulting</a></p>
   <div class="footer-links">
     <a href="https://github.com/kilrkrow/flowscript" target="_blank">GitHub</a>
     <a href="editor.html">Live Editor</a>
   </div>
 </footer>
 
-<!-- Render live demo -->
-<script type="module">
-import { render } from './flowscript.js';
-
-const source = `@direction TB
-@layout grid
-
-#start Alert Received
-Review monitoring dashboard
-
-#decision Severity?
-  -> 'P1' Page On-Call Engineer
-  -> 'P2' Assign to Team Lead
-  -> 'P3' Add to Backlog
-
-Page On-Call Engineer
-Investigate & Mitigate
-
-#decision Resolved?
-  -> 'yes' Write Post-Mortem
-  ~> 'no' Investigate & Mitigate
-
-Write Post-Mortem
-#end Incident Closed`;
-
-try {
-  document.getElementById('demoPreview').innerHTML = render(source);
-} catch(e) {
-  document.getElementById('demoPreview').innerHTML =
-    '<p style="color:#546e7a;font-size:13px;font-family:monospace">Preview unavailable</p>';
-}
-</script>
 
 </body>
 </html>
