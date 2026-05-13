@@ -153,18 +153,95 @@ Returns:
 
 ---
 
-## Prompt template for LLMs
+## Integrating with an LLM
 
-If you're wiring an LLM to FlowScript, include this in your system prompt:
+### Why LLMs can't call /compile directly
+
+Most hosted LLMs (Grok, Gemini, GPT, etc.) run in sandboxed environments that block outbound HTTP. Telling the model to POST to `/compile` will fail with "connection refused" — this is a network restriction, not an instruction problem.
+
+**MCP-native tools** (Claude in Cursor, etc.) already work because the MCP server handles the network hop on the client side. The LLM never touches the network directly.
+
+### The correct pattern — function/tool calling
+
+Register `compile_flow` as a tool in your LLM's function-calling interface. Your backend makes the HTTP call; the LLM just produces the arguments.
 
 ```
-You are a process analysis assistant. Read the FlowScript JsonGraph schema at:
-https://raw.githubusercontent.com/kilrkrow/flowscript/master/docs/schema.md
+LLM → calls compile_flow(JsonGraph) → your backend POSTs to /compile → returns { flow, svg }
+```
 
-When asked to diagram a process:
-1. Produce a valid JsonGraph object — raw JSON only, no explanation, no markdown fences.
-2. POST it to https://<your-flowscript-server>/compile with Content-Type: application/json.
-3. The response will contain { flow, svg } — return the svg to the user.
+**Tool definition (OpenAI / xAI / Gemini compatible):**
+
+```json
+{
+  "name": "compile_flow",
+  "description": "Compile a process graph into a FlowScript diagram and return the rendered SVG.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "title":     { "type": "string" },
+      "subtitle":  { "type": "string" },
+      "theme":     { "type": "string" },
+      "direction": { "type": "string", "enum": ["TB", "BT", "LR", "RL"] },
+      "nodes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id":    { "type": "string" },
+            "label": { "type": "string" },
+            "shape": { "type": "string" }
+          },
+          "required": ["id", "label"]
+        }
+      },
+      "edges": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "from":      { "type": "string" },
+            "to":        { "type": "string" },
+            "condition": { "type": "string" },
+            "label":     { "type": "string" },
+            "retry":     { "type": "boolean" }
+          },
+          "required": ["from", "to"]
+        }
+      }
+    },
+    "required": ["nodes", "edges"]
+  }
+}
+```
+
+Your tool implementation performs the POST:
+
+```typescript
+async function compile_flow(graph: JsonGraph): Promise<{ flow: string; svg: string }> {
+  const res = await fetch('https://flowscript.foxanddoveconsulting.com/compile', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(graph),
+  });
+  return res.json();
+}
+```
+
+### System prompt
+
+```
+You are a process analysis assistant. When asked to diagram a process, call the
+compile_flow tool with a JsonGraph describing the process as nodes and edges.
+
+Schema reference: https://raw.githubusercontent.com/kilrkrow/flowscript/master/docs/schema.md
+```
+
+### MCP (Claude / Cursor)
+
+Point your MCP client at the FlowScript MCP server and call `compile_flow` directly — no extra setup needed.
+
+```json
+{ "tool": "compile_flow", "input": { ...JsonGraph... } }
 ```
 
 ---
