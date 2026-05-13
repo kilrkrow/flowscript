@@ -108,13 +108,26 @@ const server = Bun.serve({
       return new Response(file, { headers: { 'Content-Type': 'application/javascript; charset=utf-8' } });
     }
 
-    // Generate endpoint
+    // Generate endpoint (document → LLM → SVG)
     if (req.method === 'POST' && url.pathname === '/generate') {
       try {
         return await handleGenerate(req);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return json({ error: message }, 500);
+      }
+    }
+
+    // Compile endpoint (JsonGraph → SVG, no LLM)
+    if (req.method === 'POST' && url.pathname === '/compile') {
+      try {
+        const graph = await req.json();
+        const flow  = jsonToFlow(graph);
+        const svg   = render(flow);
+        return json({ flow, svg });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return json({ error: message }, 400);
       }
     }
 
