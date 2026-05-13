@@ -14,6 +14,8 @@
     "build:mcp": "bun build src/mcp-server.ts --outdir dist --target=node",
     "build:editor": "bun build src/index.ts --outfile editor/flowscript.js --target=browser --format=esm",
     "build:all": "bun run build && bun run build:cli && bun run build:mcp && bun run build:editor",
+    "deploy:worker": "npx wrangler deploy",
+    "dev:worker": "npx wrangler dev",
     "dev": "bun run src/cli.ts",
     "dev:server": "bun run server/index.ts",
     "test": "bun test",
