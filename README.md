@@ -75,6 +75,14 @@ const svg = render(`
 
 For more control over the pipeline:
 
+### LLM / Agent integration
+
+If you're connecting an LLM or AI agent, use the **JsonGraph** interface — no FlowScript syntax knowledge required. Describe your process as nodes and edges; FlowScript compiles and renders it deterministically.
+
+→ **[JsonGraph Schema & prompt template](docs/schema.md)**
+
+Available via MCP (`compile_flow` tool) or REST (`POST /compile`).
+
 ```typescript
 import { parse, layout, route, renderSVG, cleanTheme } from 'flowscript';
 
