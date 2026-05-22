@@ -248,7 +248,42 @@
     .output-actions {
       display: flex;
       gap: 8px;
+      align-items: center;
     }
+
+    /* Export dropdown */
+    .export-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .export-dropdown {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 4px);
+      left: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      z-index: 100;
+      min-width: 150px;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.4);
+    }
+    .export-dropdown.open { display: block; }
+    .export-dropdown button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 9px 14px;
+      font-size: 12px;
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .export-dropdown button:hover { background: var(--accent); color: #fff; }
 
     .placeholder {
       display: flex;
@@ -350,9 +385,14 @@
     <div class="output-wrap" id="resultWrap" style="display:none">
       <div class="svg-scroll" id="svgContainer"></div>
       <div class="output-actions">
-        <button class="btn btn-sm" id="downloadSvg">Download SVG</button>
-        <button class="btn btn-sm" id="downloadPng">Download PNG</button>
-        <button class="btn btn-sm" id="copyImage" title="Copy diagram as PNG to clipboard">🖼 Copy Image</button>
+        <div class="export-wrap">
+          <button class="btn btn-sm" id="exportToggle">Export ▾</button>
+          <div class="export-dropdown" id="exportDropdown">
+            <button id="downloadSvg">Download SVG</button>
+            <button id="downloadPng">Download PNG</button>
+            <button id="copyImage">🖼 Copy Image</button>
+          </div>
+        </div>
         <button class="btn btn-sm" id="downloadFlow">Download .flow</button>
         <button class="btn btn-sm" id="copyFlow" title="Copy .flow source to clipboard">📋 Copy .flow</button>
         <button class="btn btn-sm" id="editFlow" title="Open in live editor">✏️ Edit .flow</button>
@@ -507,6 +547,18 @@
   function clearError() {
     document.getElementById('errorBox').style.display = 'none';
   }
+
+  // ── Export dropdown ───────────────────────────────────────────────────────
+  const exportToggle   = document.getElementById('exportToggle');
+  const exportDropdown = document.getElementById('exportDropdown');
+
+  exportToggle.addEventListener('click', e => {
+    e.stopPropagation();
+    exportDropdown.classList.toggle('open');
+  });
+
+  document.addEventListener('click', () => exportDropdown.classList.remove('open'));
+  exportDropdown.addEventListener('click', () => exportDropdown.classList.remove('open'));
 
   // ── PNG helper ────────────────────────────────────────────────────────────
   // Converts the current SVG string to a PNG Blob at 2× scale.

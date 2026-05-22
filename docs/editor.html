@@ -108,6 +108,40 @@ html, body {
 }
 .toolbar button:hover { background: var(--accent-hover); }
 
+/* Export dropdown */
+.export-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.export-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--surface-2, #1e1e2e);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 100;
+  min-width: 150px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.export-dropdown.open { display: block; }
+.export-dropdown button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 9px 16px;
+  font-size: 13px;
+  color: var(--text, #cdd6f4);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.export-dropdown button:hover { background: var(--accent); color: #fff; }
+
 /* Theme toggle — ghost button, sits left of Export */
 .toolbar .theme-toggle {
   background: transparent;
@@ -324,9 +358,14 @@ html, body {
   <div class="spacer"></div>
   <span class="status" id="status"></span>
   <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">🌙</button>
-  <button id="exportBtn">Export SVG</button>
-  <button id="exportPngBtn">Download PNG</button>
-  <button id="copyImageBtn" title="Copy diagram as PNG to clipboard">🖼 Copy Image</button>
+  <div class="export-wrap">
+    <button id="exportToggle">Export ▾</button>
+    <div class="export-dropdown" id="exportDropdown">
+      <button id="exportBtn">Export SVG</button>
+      <button id="exportPngBtn">Download PNG</button>
+      <button id="copyImageBtn">🖼 Copy Image</button>
+    </div>
+  </div>
 </div>
 
 <!-- Split Pane -->
@@ -898,6 +937,20 @@ document.getElementById('examples').addEventListener('change', (e) => {
     currentZoom = 1;
   }
 });
+
+// ============================================================
+// Export dropdown toggle
+// ============================================================
+const exportToggle   = document.getElementById('exportToggle');
+const exportDropdown = document.getElementById('exportDropdown');
+
+exportToggle.addEventListener('click', e => {
+  e.stopPropagation();
+  exportDropdown.classList.toggle('open');
+});
+
+document.addEventListener('click', () => exportDropdown.classList.remove('open'));
+exportDropdown.addEventListener('click', () => exportDropdown.classList.remove('open'));
 
 // ============================================================
 // Export SVG
