@@ -325,6 +325,8 @@ html, body {
   <span class="status" id="status"></span>
   <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">🌙</button>
   <button id="exportBtn">Export SVG</button>
+  <button id="exportPngBtn">Download PNG</button>
+  <button id="copyImageBtn" title="Copy diagram as PNG to clipboard">🖼 Copy Image</button>
 </div>
 
 <!-- Split Pane -->
@@ -909,6 +911,76 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   a.download = 'flowscript-diagram.svg';
   a.click();
   URL.revokeObjectURL(url);
+});
+
+// ============================================================
+// PNG export helpers
+// ============================================================
+function svgToPng(scale = 2) {
+  return new Promise((resolve, reject) => {
+    const parser = new DOMParser();
+    const doc    = parser.parseFromString(lastSvg, 'image/svg+xml');
+    const svgEl  = doc.documentElement;
+    const w = parseFloat(svgEl.getAttribute('width')  || svgEl.viewBox?.baseVal?.width  || 800);
+    const h = parseFloat(svgEl.getAttribute('height') || svgEl.viewBox?.baseVal?.height || 600);
+
+    const canvas  = document.createElement('canvas');
+    canvas.width  = w * scale;
+    canvas.height = h * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+
+    const blob = new Blob([lastSvg], { type: 'image/svg+xml' });
+    const url  = URL.createObjectURL(blob);
+    const img  = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('SVG load failed')); };
+    img.src = url;
+  });
+}
+
+document.getElementById('exportPngBtn').addEventListener('click', async () => {
+  if (!lastSvg) return;
+  const btn = document.getElementById('exportPngBtn');
+  btn.disabled = true;
+  try {
+    const blob = await svgToPng(2);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'flowscript-diagram.png';
+    a.click();
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('copyImageBtn').addEventListener('click', async () => {
+  if (!lastSvg) return;
+  const btn = document.getElementById('copyImageBtn');
+  btn.disabled = true;
+  try {
+    const blob = await svgToPng(2);
+    if (navigator.clipboard?.write) {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      btn.textContent = '✓ Copied!';
+    } else {
+      // Safari fallback — download instead
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'flowscript-diagram.png';
+      a.click();
+      btn.textContent = '↓ Saved!';
+    }
+    setTimeout(() => { btn.textContent = '🖼 Copy Image'; btn.disabled = false; }, 2000);
+    return;
+  } catch (err) {
+    console.error('Copy image failed:', err);
+  }
+  btn.disabled = false;
 });
 
 // ============================================================
