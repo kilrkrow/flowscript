@@ -351,6 +351,8 @@
       <div class="svg-scroll" id="svgContainer"></div>
       <div class="output-actions">
         <button class="btn btn-sm" id="downloadSvg">Download SVG</button>
+        <button class="btn btn-sm" id="downloadPng">Download PNG</button>
+        <button class="btn btn-sm" id="copyImage" title="Copy diagram as PNG to clipboard">🖼 Copy Image</button>
         <button class="btn btn-sm" id="downloadFlow">Download .flow</button>
         <button class="btn btn-sm" id="copyFlow" title="Copy .flow source to clipboard">📋 Copy .flow</button>
         <button class="btn btn-sm" id="editFlow" title="Open in live editor">✏️ Edit .flow</button>
@@ -506,9 +508,80 @@
     document.getElementById('errorBox').style.display = 'none';
   }
 
+  // ── PNG helper ────────────────────────────────────────────────────────────
+  // Converts the current SVG string to a PNG Blob at 2× scale.
+  // Returns a Promise<Blob>.
+  function svgToPng(scale = 2) {
+    return new Promise((resolve, reject) => {
+      // Parse width/height from the SVG root element so we can size the canvas.
+      const parser = new DOMParser();
+      const doc    = parser.parseFromString(lastSvg, 'image/svg+xml');
+      const svgEl  = doc.documentElement;
+      const w = parseFloat(svgEl.getAttribute('width')  || svgEl.viewBox?.baseVal?.width  || 800);
+      const h = parseFloat(svgEl.getAttribute('height') || svgEl.viewBox?.baseVal?.height || 600);
+
+      const canvas  = document.createElement('canvas');
+      canvas.width  = w * scale;
+      canvas.height = h * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
+
+      const blob = new Blob([lastSvg], { type: 'image/svg+xml' });
+      const url  = URL.createObjectURL(blob);
+      const img  = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('SVG load failed')); };
+      img.src = url;
+    });
+  }
+
   // ── Downloads & clipboard ─────────────────────────────────────────────────
   document.getElementById('downloadSvg').addEventListener('click', () => {
     download('diagram.svg', lastSvg, 'image/svg+xml');
+  });
+
+  document.getElementById('downloadPng').addEventListener('click', async () => {
+    const btn = document.getElementById('downloadPng');
+    btn.disabled = true;
+    try {
+      const blob = await svgToPng(2);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'diagram.png';
+      a.click();
+    } catch (err) {
+      showError('PNG export failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('copyImage').addEventListener('click', async () => {
+    const btn = document.getElementById('copyImage');
+    btn.disabled = true;
+    try {
+      const blob = await svgToPng(2);
+      if (navigator.clipboard?.write) {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        btn.textContent = '✓ Copied!';
+      } else {
+        // Safari / no Clipboard API — fall back to download
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'diagram.png';
+        a.click();
+        btn.textContent = '↓ Saved!';
+      }
+      setTimeout(() => { btn.textContent = '🖼 Copy Image'; btn.disabled = false; }, 2000);
+      return; // skip the finally re-enable; setTimeout handles it
+    } catch (err) {
+      showError('Copy image failed: ' + err.message);
+    }
+    btn.disabled = false;
   });
 
   document.getElementById('downloadFlow').addEventListener('click', () => {
