@@ -4792,11 +4792,15 @@ function wrapWithShadow(child) {
 }
 
 // src/render/svg.ts
+var WATERMARK_LINE_HEIGHT = 16;
+var WATERMARK_FONT_SIZE = 11;
+var WATERMARK_GAP = 12;
 function renderSVG(doc, routes, options) {
-  const { theme, padding = 40 } = options;
+  const { theme, padding = 40, watermark } = options;
   const bounds = calculateBounds(doc, routes, padding);
+  const wmHeight = watermark ? WATERMARK_GAP + watermark.lines.length * WATERMARK_LINE_HEIGHT : 0;
   const width = bounds.maxX - bounds.minX;
-  const height = bounds.maxY - bounds.minY;
+  const height = bounds.maxY - bounds.minY + wmHeight;
   const bgRect = theme.background && theme.background !== "#ffffff" && theme.background !== "transparent" ? el("rect", { x: bounds.minX, y: bounds.minY, width, height, fill: theme.background }) : el("g", {});
   const root = el("svg", {
     xmlns: "http://www.w3.org/2000/svg",
@@ -4804,8 +4808,35 @@ function renderSVG(doc, routes, options) {
     width,
     height,
     class: "fs-diagram"
-  }, renderDefs(theme), bgRect, renderLanes(doc, theme), renderGroups(doc, theme), renderEdges(doc, routes, theme), renderNodes(doc, theme));
+  }, renderDefs(theme), bgRect, renderLanes(doc, theme), renderGroups(doc, theme), renderEdges(doc, routes, theme), renderNodes(doc, theme), watermark ? renderWatermark(watermark, bounds) : el("g", {}));
   return serializeToSVG(root);
+}
+function renderWatermark(wm, bounds) {
+  const opacity = wm.opacity ?? 0.35;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const baseY = bounds.maxY + WATERMARK_GAP;
+  const textEls = wm.lines.map((line, i) => el("text", {
+    x: cx,
+    y: baseY + i * WATERMARK_LINE_HEIGHT,
+    "text-anchor": "middle",
+    "dominant-baseline": "hanging",
+    "font-family": "system-ui, sans-serif",
+    "font-size": WATERMARK_FONT_SIZE,
+    fill: "#888"
+  }, line));
+  const group = el("g", {
+    class: "fs-watermark",
+    opacity,
+    ...wm.url ? { cursor: "pointer" } : {}
+  }, ...textEls);
+  if (wm.url) {
+    return el("a", {
+      href: wm.url,
+      target: "_blank",
+      rel: "noopener noreferrer"
+    }, group);
+  }
+  return group;
 }
 function renderDefs(theme) {
   const arrowSize = theme.edge.arrowSize;
@@ -5152,7 +5183,7 @@ function jsonToFlow(graph) {
   const isBack = (e) => (topoIdx.get(e.to) ?? 0) <= (topoIdx.get(e.from) ?? 0);
   const fwdEdges = graph.edges.filter((e) => !isBack(e));
   const backEdges = graph.edges.filter((e) => isBack(e));
-  const lbl = (id) => nodeById.get(id).label;
+  const lbl = (id) => sanitizeLabel(nodeById.get(id).label);
   const kw = (shape) => {
     switch (shape) {
       case "start":
@@ -5179,14 +5210,17 @@ function jsonToFlow(graph) {
         return "";
     }
   };
+  const sanitizeLabel = (label) => label.replace(/\r?\n/g, " ").trim();
   const decl = (id) => {
     const n = nodeById.get(id);
     const k2 = kw(n.shape);
-    return k2 ? `${k2} ${n.label}` : n.label;
+    const l = sanitizeLabel(n.label);
+    return k2 ? `${k2} ${l}` : l;
   };
   const arrowStr = (e, label) => {
     const arr = e.retry ? "~>" : "->";
-    const lPart = label ?? e.label ? `: "${label ?? e.label}"` : "";
+    const rawLbl = label ?? e.label;
+    const lPart = rawLbl ? `: "${sanitizeLabel(rawLbl)}"` : "";
     return `${arr}${lPart}`;
   };
   const edgeKey = (from, to) => `${from}::${to}`;
@@ -5204,9 +5238,12 @@ function jsonToFlow(graph) {
     const e = outs[0];
     const arr = e.retry ? "~>" : "->";
     const lPart = e.label ? `: "${e.label}"` : "";
+    if (!declared.has(e.to)) {
+      lines.push(decl(e.to));
+      markDecl(e.to);
+    }
     lines.push(`${lbl(fromId)} ${arr} ${lbl(e.to)}${lPart}`);
     covered.add(edgeKey(fromId, e.to));
-    markDecl(e.to);
     simPrev = null;
   };
   if (graph.title || graph.subtitle) {
@@ -5270,7 +5307,7 @@ function jsonToFlow(graph) {
     for (const e of explicit) {
       const arr = e.retry ? "~>" : "->";
       const cond = e.condition ? `'${e.condition}' ` : "";
-      const lPart = e.label ? `: "${e.label}"` : "";
+      const lPart = e.label ? `: "${sanitizeLabel(e.label)}"` : "";
       lines.push(`${lbl(e.from)} ${arr} ${cond}${lbl(e.to)}${lPart}`);
     }
   }
@@ -5426,7 +5463,8 @@ function render(source, options = {}) {
   const theme = options.theme ?? resolveTheme(getDirective(doc, "theme", "clean"));
   return renderSVG(doc, routes, {
     theme,
-    padding: options.padding ?? 40
+    padding: options.padding ?? 40,
+    watermark: options.watermark
   });
 }
 export {
