@@ -18,6 +18,7 @@ export { layoutDocument as layout } from './layout/dagre-layout.js';
 export { routeEdges as route } from './layout/router.js';
 export type { RouteResult } from './layout/router.js';
 export { renderSVG } from './render/svg.js';
+export type { WatermarkConfig } from './render/svg.js';
 export { jsonToFlow } from './compiler/json-to-flow.js';
 export type { JsonGraph, JsonNode, JsonEdge } from './compiler/json-to-flow.js';
 export { cleanTheme } from './themes/clean.js';
@@ -33,10 +34,12 @@ import { renderSVG } from './render/svg.js';
 import { cleanTheme, type Theme } from './themes/clean.js';
 import { resolveTheme } from './themes/index.js';
 import { getDirective } from './parser/ast.js';
+import type { WatermarkConfig } from './render/svg.js';
 
 export interface RenderToSVGOptions {
-  theme?: Theme;
-  padding?: number;
+  theme?:     Theme;
+  padding?:   number;
+  watermark?: WatermarkConfig;
 }
 
 /**
@@ -50,6 +53,7 @@ export function render(source: string, options: RenderToSVGOptions = {}): string
   const theme = options.theme ?? resolveTheme(getDirective(doc, 'theme', 'clean'));
   return renderSVG(doc, routes, {
     theme,
-    padding: options.padding ?? 40,
+    padding:   options.padding ?? 40,
+    watermark: options.watermark,
   });
 }

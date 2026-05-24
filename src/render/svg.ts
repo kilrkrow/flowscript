@@ -11,23 +11,40 @@ import type { FlowDocument, FlowEdge } from '../parser/ast.js';
 import type { Theme } from '../themes/clean.js';
 import type { RouteResult } from '../layout/router.js';
 
+export interface WatermarkConfig {
+  lines:    string[];   // one or two lines of text
+  url?:     string;     // if set, text is wrapped in an <a> pointing here
+  opacity?: number;     // default 0.35
+}
+
 export interface RenderOptions {
-  theme: Theme;
-  padding?: number;
+  theme:      Theme;
+  padding?:   number;
+  watermark?: WatermarkConfig;
 }
 
 /**
  * Render a positioned FlowDocument to an SVG string.
  */
+const WATERMARK_LINE_HEIGHT = 16;
+const WATERMARK_FONT_SIZE   = 11;
+const WATERMARK_GAP         = 12; // space between diagram bottom and watermark
+
 export function renderSVG(doc: FlowDocument, routes: Map<string, RouteResult>, options: RenderOptions): string {
-  const { theme, padding = 40 } = options;
+  const { theme, padding = 40, watermark } = options;
 
   // Calculate viewBox from node positions AND route waypoints so that
   // outer-channel paths (which extend beyond node bounding boxes) are
   // not clipped.
   const bounds = calculateBounds(doc, routes, padding);
-  const width = bounds.maxX - bounds.minX;
-  const height = bounds.maxY - bounds.minY;
+
+  // Reserve space below the diagram for the watermark if present.
+  const wmHeight = watermark
+    ? WATERMARK_GAP + watermark.lines.length * WATERMARK_LINE_HEIGHT
+    : 0;
+
+  const width  = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY + wmHeight;
 
   // Build the SVG tree
   const bgRect = theme.background && theme.background !== '#ffffff' && theme.background !== 'transparent'
@@ -47,9 +64,44 @@ export function renderSVG(doc: FlowDocument, routes: Map<string, RouteResult>, o
     renderGroups(doc, theme),
     renderEdges(doc, routes, theme),
     renderNodes(doc, theme),
+    watermark ? renderWatermark(watermark, bounds) : el('g', {}),
   );
 
   return serializeToSVG(root);
+}
+
+function renderWatermark(wm: WatermarkConfig, bounds: ReturnType<typeof calculateBounds>): SvgElement {
+  const opacity  = wm.opacity ?? 0.35;
+  const cx       = (bounds.minX + bounds.maxX) / 2;
+  const baseY    = bounds.maxY + WATERMARK_GAP;
+
+  const textEls = wm.lines.map((line, i) =>
+    el('text', {
+      x: cx,
+      y: baseY + i * WATERMARK_LINE_HEIGHT,
+      'text-anchor':      'middle',
+      'dominant-baseline': 'hanging',
+      'font-family':      'system-ui, sans-serif',
+      'font-size':        WATERMARK_FONT_SIZE,
+      fill:               '#888',
+    }, line),
+  );
+
+  const group = el('g', {
+    class:   'fs-watermark',
+    opacity,
+    ...(wm.url ? { cursor: 'pointer' } : {}),
+  }, ...textEls);
+
+  if (wm.url) {
+    return el('a', {
+      href:   wm.url,
+      target: '_blank',
+      rel:    'noopener noreferrer',
+    }, group);
+  }
+
+  return group;
 }
 
 function renderDefs(theme: Theme): SvgElement {
