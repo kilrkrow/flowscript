@@ -829,7 +829,14 @@ function doRender() {
 
   const t0 = performance.now();
   try {
-    const svg = render(source, { theme: resolveTheme(diagramThemeName) });
+    const svg = render(source, {
+      theme: resolveTheme(diagramThemeName),
+      watermark: {
+        lines:   ['Created with FlowScript', 'flowscript.foxanddoveconsulting.com'],
+        url:     'https://flowscript.foxanddoveconsulting.com',
+        opacity: 0.35,
+      },
+    });
     const elapsed = (performance.now() - t0).toFixed(1);
     lastSvg = svg;
 
