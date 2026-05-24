@@ -14,7 +14,13 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { jsonToFlow } from '../src/compiler/json-to-flow.js';
-import { render } from '../src/index.js';
+import { render, type WatermarkConfig } from '../src/index.js';
+
+const WATERMARK: WatermarkConfig = {
+  lines:   ['Created with FlowScript', 'flowscript.foxanddoveconsulting.com'],
+  url:     'https://flowscript.foxanddoveconsulting.com',
+  opacity: 0.35,
+};
 import { extractFromUrl, extractFromFile } from './extract.js';
 import { extractGraph, hasApiKey } from './llm.js';
 
@@ -69,7 +75,7 @@ async function handleGenerate(req: Request): Promise<Response> {
   // LLM extraction → compile → render
   const graph = await extractGraph(sopText);
   const flow  = jsonToFlow(graph);
-  const svg   = render(flow);
+  const svg   = render(flow, { watermark: WATERMARK });
 
   return json({ flow, svg });
 }
@@ -123,7 +129,7 @@ const server = Bun.serve({
       try {
         const graph = await req.json();
         const flow  = jsonToFlow(graph);
-        const svg   = render(flow);
+        const svg   = render(flow, { watermark: WATERMARK });
         return json({ flow, svg });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

@@ -9,8 +9,14 @@
  * See: https://github.com/kilrkrow/flowscript/blob/master/docs/schema.md
  */
 
-import { jsonToFlow } from '../src/compiler/json-to-flow.js';
-import { render }     from '../src/index.js';
+import { jsonToFlow }              from '../src/compiler/json-to-flow.js';
+import { render, type WatermarkConfig } from '../src/index.js';
+
+const WATERMARK: WatermarkConfig = {
+  lines:   ['Created with FlowScript', 'flowscript.foxanddoveconsulting.com'],
+  url:     'https://flowscript.foxanddoveconsulting.com',
+  opacity: 0.35,
+};
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin':  '*',
@@ -43,7 +49,7 @@ export default {
 
       try {
         const flow = jsonToFlow(graph as any);
-        const svg  = render(flow);
+        const svg  = render(flow, { watermark: WATERMARK });
         return json({ flow, svg });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
