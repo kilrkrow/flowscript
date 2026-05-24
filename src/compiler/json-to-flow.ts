@@ -88,7 +88,7 @@ export function jsonToFlow(graph: JsonGraph): string {
   const backEdges = graph.edges.filter(e => isBack(e));
 
   // Helpers
-  const lbl = (id: string) => nodeById.get(id)!.label;
+  const lbl = (id: string) => sanitizeLabel(nodeById.get(id)!.label);
   const kw  = (shape: ShapeType | 'process' | undefined): string => {
     switch (shape) {
       case 'start':      return '#start';
@@ -104,14 +104,18 @@ export function jsonToFlow(graph: JsonGraph): string {
       default:           return '';            // process → plain label
     }
   };
+  const sanitizeLabel = (label: string) => label.replace(/\r?\n/g, ' ').trim();
+
   const decl = (id: string) => {
     const n = nodeById.get(id)!;
     const k = kw(n.shape);
-    return k ? `${k} ${n.label}` : n.label;
+    const l = sanitizeLabel(n.label);
+    return k ? `${k} ${l}` : l;
   };
   const arrowStr = (e: JsonEdge, label?: string) => {
-    const arr   = e.retry ? '~>' : '->';
-    const lPart = (label ?? e.label) ? `: "${label ?? e.label}"` : '';
+    const arr     = e.retry ? '~>' : '->';
+    const rawLbl  = label ?? e.label;
+    const lPart   = rawLbl ? `: "${sanitizeLabel(rawLbl)}"` : '';
     return `${arr}${lPart}`;
   };
   const edgeKey = (from: string, to: string) => `${from}::${to}`;
@@ -146,10 +150,13 @@ export function jsonToFlow(graph: JsonGraph): string {
     const e = outs[0];
     const arr = e.retry ? '~>' : '->';
     const lPart = e.label ? `: "${e.label}"` : '';
+    // Emit declaration first so the parser gets the #keyword before the edge reference
+    if (!declared.has(e.to)) {
+      lines.push(decl(e.to));
+      markDecl(e.to);
+    }
     lines.push(`${lbl(fromId)} ${arr} ${lbl(e.to)}${lPart}`);
     covered.add(edgeKey(fromId, e.to));
-    // Pre-declare the target so topo loop doesn't re-emit it
-    markDecl(e.to);
     simPrev = null;
   };
 
@@ -233,7 +240,7 @@ export function jsonToFlow(graph: JsonGraph): string {
     for (const e of explicit) {
       const arr   = e.retry ? '~>' : '->';
       const cond  = e.condition ? `'${e.condition}' ` : '';
-      const lPart = e.label ? `: "${e.label}"` : '';
+      const lPart = e.label ? `: "${sanitizeLabel(e.label)}"` : '';
       lines.push(`${lbl(e.from)} ${arr} ${cond}${lbl(e.to)}${lPart}`);
     }
   }
