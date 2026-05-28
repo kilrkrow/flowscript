@@ -1,19 +1,28 @@
 {
-  "name": "flowscript",
+  "name": "@kilrkrow/flowscript",
   "version": "0.1.0",
   "description": "A human-craftable diagram DSL that renders clean, Visio-quality output",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "browser": "./dist/browser.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
   "bin": {
     "flowscript": "dist/cli.js"
   },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target=node",
+    "build:browser": "bun build src/index.ts --outfile dist/browser.js --target=browser --format=esm",
     "build:cli": "bun build src/cli.ts --outdir dist --target=node",
     "build:mcp": "bun build src/mcp-server.ts --outdir dist --target=node",
     "build:editor": "bun build src/index.ts --outfile editor/flowscript.js --target=browser --format=esm",
     "build:all": "bun run build && bun run build:cli && bun run build:mcp && bun run build:editor",
+    "prepublishOnly": "bun run build && bun run build:browser && bun run build:cli",
     "deploy:worker": "npx wrangler deploy",
     "dev:worker": "npx wrangler dev",
     "dev": "bun run src/cli.ts",
