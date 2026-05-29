@@ -1021,22 +1021,44 @@ function buildGridReservation(
       dirs.exitDir === 'N' || dirs.exitDir === 'S' ? nearExitH : nearExitV;
     const entryNear =
       dirs.entryDir === 'N' || dirs.entryDir === 'S' ? nearEntryH : nearEntryV;
-    const exitPrefs = rankAround(dirs.exitDir, exitNear);
+    let exitPrefs = rankAround(dirs.exitDir, exitNear);
     const entryPrefs = rankAround(dirs.entryDir, entryNear);
+
+    // For upward-going skip edges with a horizontal natural exit direction
+    // (E or W), S exit creates a visual U-turn: the path leaves the source
+    // going the wrong way and immediately reverses. Push S after E so the
+    // reservation picks E (the far perpendicular) before falling back to S.
+    if (isSkip && dy < 0 && (dirs.exitDir === 'E' || dirs.exitDir === 'W')) {
+      const sIdx = exitPrefs.indexOf('S');
+      const eIdx = exitPrefs.indexOf('E');
+      if (sIdx !== -1 && eIdx !== -1 && sIdx < eIdx) {
+        exitPrefs = [
+          ...exitPrefs.slice(0, sIdx),
+          exitPrefs[eIdx],
+          ...exitPrefs.slice(sIdx + 1, eIdx),
+          exitPrefs[sIdx],
+          ...exitPrefs.slice(eIdx + 1),
+        ];
+      }
+    }
 
     // Decisions: the multi-branch pre-pass already pinned a tip and we
     // must preserve it because diamonds attach at the tip itself.
     const exitPin = (overrideExit && fromNode.shape === 'decision')
       ? overrideExit
       : (fromNode.shape === 'decision' ? dirs.exitDir : undefined);
-    // For skip back-edges where geometry predicts S entry, pin it.
-    // S-entry (arriving from below) and S-exit (leaving downward) are
-    // visually distinct and don't conflict — pinning bypasses the
-    // opposite-role check that would otherwise block S and force a
-    // piercing W entry.
+    // For skip edges the geometry-predicted entry direction is derived
+    // from channel position and should be treated as a hard preference.
+    // Pinning it means multiple skip edges arriving on the same side of
+    // the same node will stack in the same (node, dir, role) bucket and
+    // get spread via applyReservationSpread, rather than the reserver
+    // diverting them to arbitrary free faces. For S-entry specifically,
+    // the pin also bypasses the opposite-role check that would otherwise
+    // block S and force a piercing W entry (S-entry arriving from below
+    // and S-exit leaving downward are visually distinct).
     const entryPin = toNode.shape === 'decision'
       ? dirs.entryDir
-      : (isSkip && dirs.entryDir === 'S' ? 'S' : undefined);
+      : (isSkip ? dirs.entryDir : undefined);
 
     prefs.push({
       edgeKey: ek,

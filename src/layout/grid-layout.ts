@@ -374,35 +374,21 @@ function enqueueDecisionBranches(
   }
 
   // Second pass: assign side columns.
-  // no/false → West by convention, but adaptiveSide() may flip to East if
-  // the West side is already significantly more loaded below this row.
-  // Multi-way branches alternate W/E, also subject to load balancing.
+  // no/false → East by convention. Multi-way branches alternate E then W.
   let nextSideIdx = 0;
   for (const b of buckets) {
     if (b.main) continue;
     const cond = (b.edge.condition ?? '').toLowerCase();
     if (cond === 'no' || cond === 'false') {
-      b.side = adaptiveSide('W', rows);
+      b.side = 'E';
     } else {
-      const preferred: 'E' | 'W' = (nextSideIdx % 2 === 0) ? 'W' : 'E';
-      b.side = adaptiveSide(preferred, rows);
+      b.side = (nextSideIdx % 2 === 0) ? 'E' : 'W';
       nextSideIdx++;
     }
   }
   // Ensure at most one E and one W in this batch by re-balancing.
   const eUsed = buckets.filter(b => b.side === 'E').length;
   const wUsed = buckets.filter(b => b.side === 'W').length;
-  if (wUsed > 1 && eUsed === 0) {
-    // All side branches landed on W; move one non-no branch to E.
-    let flipped = false;
-    for (const b of buckets) {
-      const c = (b.edge.condition ?? '').toLowerCase();
-      if (b.side === 'W' && !flipped && c !== 'no' && c !== 'false') {
-        b.side = 'E';
-        flipped = true;
-      }
-    }
-  }
   if (eUsed > 1 && wUsed === 0) {
     let flipped = false;
     for (const b of buckets) {
