@@ -1,0 +1,8 @@
+#start Start
+  #decision Should we retry?
+    -> Yes: Process
+    -> No: Process
+    -> Maybe: Process
+
+Process
+  #end Done

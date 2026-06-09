@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parse } from '../src/parser/parser.js';
 import { layoutDocument } from '../src/layout/dagre-layout.js';
-import { routeEdges } from '../src/layout/router.js';
+import { routeEdges, findRoute } from '../src/layout/router.js';
 import {
   reservePorts, type EdgePreferences,
 } from '../src/layout/port-reservation.js';
@@ -192,7 +192,8 @@ describe('incident-response — Monitor entry-side regression', () => {
 
     // Sanity: the no-branch from "Is there an event requiring police?"
     // already reaches Monitor on its N port.
-    const noEdge = routes.get(`${event.id}->${monitor.id}`)!;
+    const noEdgeObj = doc.edges.find(e => e.from === event.id && e.to === monitor.id && e.condition === 'no')!;
+    const noEdge = findRoute(routes, doc, noEdgeObj)!;
     const noEnd = noEdge.waypoints![noEdge.waypoints!.length - 1];
     expect(classifySide(monitor, noEnd)).toBe('N');
 
@@ -201,7 +202,8 @@ describe('incident-response — Monitor entry-side regression', () => {
     // Monitor and Monitor's S is opposite-role-occupied by the natural
     // outbound flow toward Resolved? — pins the choice to W (the
     // perpendicular cardinal facing the source's column).
-    const yesEdge = routes.get(`${arrived.id}->${monitor.id}`)!;
+    const yesEdgeObj = doc.edges.find(e => e.from === arrived.id && e.to === monitor.id && e.condition === 'yes')!;
+    const yesEdge = findRoute(routes, doc, yesEdgeObj)!;
     const yesEnd = yesEdge.waypoints![yesEdge.waypoints!.length - 1];
     const side = classifySide(monitor, yesEnd);
     expect(side).not.toBe('N');

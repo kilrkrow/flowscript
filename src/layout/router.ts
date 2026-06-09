@@ -126,8 +126,8 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
     const toNode = doc.nodes.get(edge.to);
     if (!fromNode || !toNode) continue;
 
-    const key = `${edge.from}->${edge.to}`;
-    const overrideExit = decisionExitDir.get(edgeId(i, edge));
+    const key = edgeId(i, edge);
+    const overrideExit = decisionExitDir.get(key);
     let result: RouteResult;
 
     const isSkip = gridMeta?.skipEdges.has(edgeId(i, edge));
@@ -166,6 +166,20 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
   }
 
   return routes;
+}
+
+/**
+ * Look up the route for a specific edge object. Handles the index-keyed
+ * map without callers needing to know the internal key format.
+ */
+export function findRoute(
+  routes: Map<string, RouteResult>,
+  doc: FlowDocument,
+  edge: FlowEdge,
+): RouteResult | undefined {
+  const i = doc.edges.indexOf(edge);
+  if (i === -1) return undefined;
+  return routes.get(edgeId(i, edge));
 }
 
 function routeEdge(
@@ -1311,7 +1325,7 @@ function anyNodeBetweenSourceAndChannel(
  * (from, to) edges (e.g. an explicit yes-branch plus an implicit
  * fall-through to the same target) don't share routing state.
  */
-function edgeId(index: number, edge: FlowEdge): string {
+export function edgeId(index: number, edge: FlowEdge): string {
   return `${index}:${edge.from}->${edge.to}`;
 }
 
@@ -1832,7 +1846,7 @@ function getPathMidpoint(points: Port[]): Port {
   let targetLen = totalLen / 2;
   for (let i = 0; i < segLens.length; i++) {
     if (targetLen <= segLens[i]) {
-      const t = targetLen / segLens[i];
+      const t = segLens[i] > 0 ? targetLen / segLens[i] : 0;
       return {
         x: Math.round(points[i].x + (points[i + 1].x - points[i].x) * t),
         y: Math.round(points[i].y + (points[i + 1].y - points[i].y) * t),
@@ -1883,7 +1897,7 @@ function applyLineJumps(
   const ordered: Array<{ key: string; route: RouteResult; segs: Segment[] }> = [];
   for (let i = 0; i < doc.edges.length; i++) {
     const edge = doc.edges[i];
-    const key = `${edge.from}->${edge.to}`;
+    const key = edgeId(i, edge);
     const route = routes.get(key);
     if (!route?.waypoints || route.waypoints.length < 2) continue;
     ordered.push({ key, route, segs: waypointsToSegments(route.waypoints) });

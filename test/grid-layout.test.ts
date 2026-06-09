@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parse } from '../src/parser/parser.js';
 import { layoutDocument, getGridMeta } from '../src/layout/dagre-layout.js';
-import { routeEdges } from '../src/layout/router.js';
+import { routeEdges, findRoute } from '../src/layout/router.js';
 import type { FlowDocument, FlowNode } from '../src/parser/ast.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -85,7 +85,7 @@ function findNodePierceViolations(
   const out: Array<{ edge: string; node: string }> = [];
   const margin = 1;
   for (const e of doc.edges) {
-    const r = routes.get(`${e.from}->${e.to}`);
+    const r = findRoute(routes, doc, e);
     if (!r?.waypoints) continue;
     for (let i = 0; i < r.waypoints.length - 1; i++) {
       const a = r.waypoints[i];
@@ -162,7 +162,7 @@ describe('grid layout — incident-response (north-star fixture)', () => {
       e => e.from === decision.id && e.to === monitor.id && e.condition === 'no',
     )!;
     expect(noEdge).toBeDefined();
-    const r = routes.get(`${noEdge.from}->${noEdge.to}`)!;
+    const r = findRoute(routes, doc, noEdge)!;
     expect(r.waypoints).toBeDefined();
     const wp = r.waypoints!;
 
@@ -259,7 +259,7 @@ describe('grid layout — multi-branch decision still works', () => {
     expect(branches.length).toBe(3);
     // Every branch has non-degenerate path data.
     for (const e of branches) {
-      const r = routes.get(`${e.from}->${e.to}`)!;
+      const r = findRoute(routes, doc, e)!;
       expect(r.pathData).not.toMatch(/NaN/);
       expect(r.pathData.length).toBeGreaterThan(10);
     }
