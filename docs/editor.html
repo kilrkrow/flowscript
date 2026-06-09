@@ -59,6 +59,23 @@ html, body {
   z-index: 10;
 }
 
+.toolbar .back-btn {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.toolbar .back-btn:hover {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border-light);
+}
+
 .toolbar .logo {
   font-size: 15px;
   font-weight: 700;
@@ -340,6 +357,8 @@ html, body {
 
 <!-- Toolbar -->
 <div class="toolbar">
+  <a href="/" class="back-btn" title="Back to home">← Home</a>
+  <div class="separator"></div>
   <div class="logo">Flow<span>Script</span></div>
   <div class="separator"></div>
   <select id="examples">
