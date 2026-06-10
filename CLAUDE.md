@@ -72,6 +72,56 @@ src/themes/      clean.ts             → stroke, fill, font tokens
 - `usingTopEntry` fires when `toRow > fromRow` (not `+ 1`) — catches adjacent-row cross-column forward edges.
 - `calculateBounds` in `svg.ts` walks route waypoints as well as node bounding boxes. Outer-channel paths extend beyond nodes.
 
+### Routing correctness invariants (must all hold after every route)
+
+These are the ground-truth spec. Any fix that breaks one of these is wrong, even if it fixes a visual issue.
+
+1. **No pierce**: no path segment crosses any node's bounding box (node + 8px margin), except the two terminal segments connecting to ports.
+2. **Entry direction matches flow**: forward edges enter N; cross-column forward edges enter N (≥1 row below) or E/W (adjacent row); back-edges enter S or E/W depending on channel side.
+3. **Decision exits are semantic**: `yes`/`true` → S tip always; `no`/`false` → E/W tip toward target; other conditions → remaining tips scored by geometry.
+4. **No port stacking**: two edges on the same face of the same node must have distinct (x,y) entry/exit points, separated ≥ 4px.
+5. **All coordinates finite**: every waypoint must be a finite number (no NaN, no Infinity).
+6. **Channel consistency**: the `channelX` used in waypoint construction must match the `channelX` used in port reservation. Mismatches cause wrong-face entry.
+
+### Decision exit conventions (do not change without updating tests)
+
+- `yes`/`true` branches: **always exit S tip**, even when the target is above the decision in the layout (cross-column back-reference). The skip router uses the outer channel to loop back up.
+  - Exception: same-column back-edge (`|dx| ≤ 50`). These exit W by convention for a compact arc.
+- `no`/`false` branches: exit toward the target column (E if target is right, W if left).
+- The `assignDecisionExits()` pre-pass encodes these rules. Do not bypass it.
+
+### Channel selection rules (do not break these)
+
+`predictSkipDirs()` computes `channelX` before port reservation. `routeGridSkip()` re-derives `channelX` if the reservation changed the exit direction. **These two must agree.** The most common source of routing bugs is one updating channelX and the other not.
+
+- main → sideCol with forced S/N exit: use **outer** channel (outerWest/outerEast), not the inner column channel.
+- main → main with W exit override: use outerWest.
+- main → main with E exit override: use outerEast.
+- sideCol → main: use the **inner** channel between the two columns. Do not apply the main-column correction.
+- The `fromSide === 0` guard in `predictSkipDirs` is intentional — it prevents sideCol→main edges from getting the wrong outer channel.
+
+### Port reservation rules (do not change without running full suite)
+
+- `entryPin` in `buildGridReservation` pins **all** skip edge entries (`isSkip ? dirs.entryDir : undefined`). This is required so multiple skip edges targeting the same face land in the same bucket and get spread via `applyReservationSpread`. Narrowing this back to S-only breaks spread for W/E entries.
+- `exitPin` for decisions is always the `assignDecisionExits` override. Never bypass it.
+- The two-pass order (exits first, then entries) is load-bearing. Reversing it breaks opposite-direction conflict detection.
+
+### Known remaining visual issues (not yet tested)
+
+1. **Trench collision** (`incident-response`: green yes-edge and red no-edge share outer-west channel). Fix: replace `edgeIndex % 4` spread with a per-channel slot counter that checks vertical range overlap. ~10 lines in `routeGridSkip`. Low risk.
+2. **`Reviewer approved? → Iterate On Project`** (`learning-flow`): no-branch enters from wrong face. Needs a dedicated test + targeted fix.
+
+### Architectural direction (when the above are fixed)
+
+The next meaningful architectural improvement is a **dynamic channel sizing + iterative layout loop**:
+
+```
+classify edges → count concurrent channel occupancy → size channels
+→ assign pixel positions → route → validate → bump if violations → repeat
+```
+
+This replaces the fixed `SPREAD = 14` constant with channel widths derived from actual edge occupancy. Convergence is guaranteed (constraints only increase). Most diagrams converge in 1 pass. Estimated scope: ~300 lines, 3–5 days. **Do not attempt this before the oracle corpus and invariant validator are in place** — those provide the safety net needed to refactor the layout engine without introducing regressions.
+
 ---
 
 ## Product Architecture & Deployment Strategy

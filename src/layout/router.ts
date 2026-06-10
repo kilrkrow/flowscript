@@ -878,23 +878,47 @@ function routeGridSkip(
   let finalEntryDir: CardinalDir = resolvedEntryDir;
 
   // Sync channelX to the reservation-adjusted exit direction.
-  // When the reservation flips the exit side (e.g. a multi-branch decision
-  // where assignDecisionExits pins 'E' but the local decisionExit heuristic
-  // had set 'W'), the channel must follow or the path will U-turn.
-  // Only re-derive for main→main edges (side-column edges use column-relative
-  // channel positions that don't depend on E/W symmetrically).
-  if (fromSide === 0 && toSide === 0 && exitFinalDir !== exitDir) {
-    channelX = exitFinalDir === 'E'
-      ? channels.outerEast + spreadIdx * SPREAD
-      : channels.outerWest - spreadIdx * SPREAD;
+  // When the reservation flips the exit side, the channel must follow
+  // or the path will U-turn / pierce nodes.
+  //
+  // Cases handled:
+  //   main→main (E/W/S flip): use outerEast / outerWest.
+  //   main→sideCol with forced S/N exit: the inner column channel is
+  //     wrong — a vertical exit must route via the *outer* channel so
+  //     the path can swing past the side-column nodes.
+  if (exitFinalDir !== exitDir) {
+    if (fromSide === 0 && toSide === 0) {
+      if (exitFinalDir === 'E') {
+        channelX = channels.outerEast + spreadIdx * SPREAD;
+      } else if (exitFinalDir === 'W') {
+        channelX = channels.outerWest - spreadIdx * SPREAD;
+      } else {
+        // S exit on a main→main yes-back-edge: outer east by convention.
+        channelX = channels.outerEast + spreadIdx * SPREAD;
+      }
+    } else if ((exitFinalDir === 'S' || exitFinalDir === 'N') && fromSide === 0) {
+      // main→sideCol with vertical exit: outer channel on the target side.
+      channelX = toSide < 0
+        ? channels.outerWest - spreadIdx * SPREAD
+        : channels.outerEast + spreadIdx * SPREAD;
+    }
     // Re-derive entryDir now that channelX changed.
-    if (channelX > (to.x ?? 0)) entryDir = 'E';
-    else if (channelX < (to.x ?? 0)) entryDir = 'W';
-    else entryDir = exitFinalDir === 'E' ? 'W' : 'E';
-    if (usingSouthEntry) entryDir = 'S';
-    if (usingTopEntry) entryDir = 'N';
-    finalEntryDir = entryDir;
-    entry = portForReserved(to, finalEntryDir, null, 'entry', finalEntryDir);
+    let newEntryDir: CardinalDir;
+    if (channelX > (to.x ?? 0)) newEntryDir = 'E';
+    else if (channelX < (to.x ?? 0)) newEntryDir = 'W';
+    else newEntryDir = exitFinalDir === 'E' ? 'W' : 'E';
+    if (usingSouthEntry) newEntryDir = 'S';
+    if (usingTopEntry) newEntryDir = 'N';
+    // Only replace the entry port when the direction changes — this
+    // preserves the spread-adjusted port when the reservation and the
+    // re-derivation agree on the same face.
+    if (newEntryDir !== finalEntryDir) {
+      finalEntryDir = newEntryDir;
+      entry = portForReserved(to, finalEntryDir, null, 'entry', finalEntryDir);
+    } else {
+      finalEntryDir = newEntryDir;
+      // entry already has spread applied via applyReservationSpread above
+    }
   }
 
   // Sanity-check: if port reservation assigned E/W entry but the channel
@@ -927,10 +951,12 @@ function routeGridSkip(
   if ((exitFinalDir === 'E' || exitFinalDir === 'W') && !wouldPierceHorizontal) {
     waypoints.push({ x: channelX, y: exit.y });
   } else {
-    // Vertical exit (or forced detour): step into the gap before/after
-    // the source row, then go horizontal toward the channel. Detours use
-    // the half-row gap so they don't cross other nodes sharing the row.
-    const gapY = goingDown
+    // Vertical exit (or forced detour): step into the gap in the
+    // direction the exit faces, then go horizontal toward the channel.
+    // Use exitFinalDir (not goingDown) so a forced-S exit on a back-edge
+    // still steps *down* (not up) from the south tip.
+    const exitGoesDown = (exitFinalDir === 'S');
+    const gapY = exitGoesDown
       ? (from.y ?? 0) + (from.height ?? 44) / 2 + 30
       : (from.y ?? 0) - (from.height ?? 44) / 2 - 30;
     waypoints.push({ x: exit.x, y: gapY });
@@ -1003,7 +1029,7 @@ function buildGridReservation(
     const overrideExit = decisionExitDir.get(ek);
     const isSkip = meta.skipEdges.has(ek);
     const dirs = isSkip
-      ? predictSkipDirs(edge, fromNode, toNode, meta, channels)
+      ? predictSkipDirs(edge, fromNode, toNode, meta, channels, overrideExit)
       : predictLocalDirs(edge, fromNode, toNode, meta, overrideExit);
 
     // Build ranked candidate lists. The first entry is the natural pick;
@@ -1029,14 +1055,16 @@ function buildGridReservation(
     const exitPin = (overrideExit && fromNode.shape === 'decision')
       ? overrideExit
       : (fromNode.shape === 'decision' ? dirs.exitDir : undefined);
-    // For skip back-edges where geometry predicts S entry, pin it.
-    // S-entry (arriving from below) and S-exit (leaving downward) are
-    // visually distinct and don't conflict — pinning bypasses the
-    // opposite-role check that would otherwise block S and force a
-    // piercing W entry.
+    // Pin every skip edge's entry to the geometry-predicted direction.
+    // This keeps multiple skip edges that share the same entry face in
+    // one bucket so applyReservationSpread can distribute them, rather
+    // than the reserver diverting each to an arbitrary free cardinal.
+    // (The S-only pin that was here before caused three yes-back-edges
+    // targeting the same node to land on three different faces with no
+    // spread between them.)
     const entryPin = toNode.shape === 'decision'
       ? dirs.entryDir
-      : (isSkip && dirs.entryDir === 'S' ? 'S' : undefined);
+      : (isSkip ? dirs.entryDir : undefined);
 
     prefs.push({
       edgeKey: ek,
@@ -1132,12 +1160,20 @@ function predictLocalDirs(
   return { exitDir, entryDir };
 }
 
-/** Predict the exit/entry direction for a grid skip edge. */
+/** Predict the exit/entry direction for a grid skip edge.
+ *
+ * @param overrideExit  When the caller already knows the exit direction
+ *   (e.g. a multi-branch decision pre-pass), pass it here so the channel
+ *   and entry direction are derived from the *actual* exit, not the
+ *   initial geometry guess.  Without this, the reservation and the router
+ *   disagree on which channel to use and pick conflicting entry faces.
+ */
 function predictSkipDirs(
   edge: FlowEdge,
   from: FlowNode, to: FlowNode,
   meta: GridLayoutMeta,
   channels: GridChannels,
+  overrideExit?: CardinalDir,
 ): { exitDir: CardinalDir; entryDir: CardinalDir } {
   const fromCol = meta.nodeColumn.get(edge.from) ?? 'main';
   const toCol = meta.nodeColumn.get(edge.to) ?? 'main';
@@ -1189,11 +1225,43 @@ function predictSkipDirs(
     exitDir = goingDown ? 'S' : 'N';
   }
 
+  // When the caller knows the exit direction will be overridden (e.g. a
+  // multi-branch decision pin), re-derive channelX so the entry direction
+  // below is based on the *actual* exit, not the initial column-topology
+  // guess.  Without this correction the reservation and the router see
+  // different channels and pick conflicting entry faces.
+  //
+  // Note: we always re-derive when overrideExit is given for MAIN-COLUMN
+  // decisions — even when the earlier upward-loop guard set exitDir to
+  // the same value — because that guard does NOT update channelX.
+  //
+  // Side-column decisions (e.g. W1 → main) already have the correct
+  // channelX from the initial column-topology computation.  Applying
+  // the correction there would replace the right inner channel with the
+  // wrong outer channel on the opposite side.
+  if (from.shape === 'decision' && overrideExit && fromSide === 0) {
+    exitDir = overrideExit;
+    if (exitDir === 'S' || exitDir === 'N') {
+      // Vertical exit forces the outer channel on the side of the target
+      // column so the path can loop around the side-column nodes.
+      if (toSide < 0)      channelX = channels.outerWest;
+      else if (toSide > 0) channelX = channels.outerEast;
+      else                 channelX = channels.outerEast; // main→main yes-back
+    } else if (exitDir === 'W') {
+      channelX = (fromSide === 0 && toSide === 0)
+        ? channels.outerWest
+        : (channels.west.get('main') ?? channels.outerWest);
+    } else { // 'E'
+      channelX = (fromSide === 0 && toSide === 0)
+        ? channels.outerEast
+        : (channels.east.get('main') ?? channels.outerEast);
+    }
+  }
+
   let entryDir: CardinalDir;
   if (channelX > (to.x ?? 0)) entryDir = 'E';
   else if (channelX < (to.x ?? 0)) entryDir = 'W';
   else entryDir = exitDir === 'E' ? 'W' : 'E';
-
   // South-entry preference (mirrors routeGridSkip): back-edge arriving
   // via a channel that nearly aligns with the target center → enter from the
   // bottom. Threshold tightened to 25% of width so side entry is used when
@@ -1361,22 +1429,28 @@ function assignDecisionExits(doc: FlowDocument): Map<string, CardinalDir> {
     // with the natural "enter from top" routing into the diamond.
     const preferOrder: CardinalDir[] = ['S', 'E', 'W', 'N'];
 
-    // Pass 1: honor yes/true by pinning to S for forward edges.
-    // Back-edges (target above source) must not pin to S — instead
-    // use the side that faces the target so the path routes correctly.
+    // Pass 1: honor yes/true by pinning to S for forward edges (the
+    // "happy path continues downward" convention) and for westward
+    // cross-column back-references — those happen when the decision is in
+    // the main column and its yes-target landed in a left side column at
+    // an earlier row.  The skip router uses the outer-west channel to
+    // loop the path back up to the target.
+    //
+    // Same-column back-edges and eastward cross-column back-references
+    // use a side exit toward the target so the path stays compact.
     for (const { idx, edge } of branches) {
       const lc = (edge.condition ?? '').toLowerCase();
       if (lc === 'yes' || lc === 'true') {
         const to = doc.nodes.get(edge.to);
         const dy = (to?.y ?? 0) - (from.y ?? 0);
-        if (dy >= 0) {
-          // Forward edge: standard S (continue straight down).
+        const dx = (to?.x ?? 0) - (from.x ?? 0);
+        if (dy >= 0 || dx < -50) {
+          // Forward edge or westward cross-column back-ref: south exit.
           out.set(edgeId(idx, edge), 'S');
           used.add('S');
         } else {
-          // Back-edge: exit toward the target column.
-          const dx = (to?.x ?? 0) - (from.x ?? 0);
-          const pick: CardinalDir = dx <= 0 ? 'W' : 'E';
+          // Same-column (|dx|≤50) or eastward cross-column: side exit.
+          const pick: CardinalDir = dx > 50 ? 'E' : 'W';
           out.set(edgeId(idx, edge), pick);
           used.add(pick);
         }
