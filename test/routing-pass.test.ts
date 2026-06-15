@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { routeEdges } from '../src/layout/router.js';
+import { routeEdges, findRoute } from '../src/layout/router.js';
 import { parse } from '../src/parser/parser.js';
 import { layoutDocument } from '../src/layout/dagre-layout.js';
 import type { FlowDocument, FlowNode, FlowEdge } from '../src/parser/ast.js';
@@ -53,7 +53,7 @@ describe('scored port selection — decision target above-right of source', () =
     const edge: FlowEdge = { from: 'clarify', to: 'detail' };
     const doc = makeDoc([src, dec], [edge]);
     const routes = routeEdges(doc);
-    const r = routes.get('clarify->detail')!;
+    const r = findRoute(routes, doc, edge)!;
     expect(r).toBeDefined();
     expect(r.waypoints).toBeDefined();
     const wp = r.waypoints!;
@@ -73,7 +73,7 @@ describe('scored port selection — decision target above-right of source', () =
     const edge: FlowEdge = { from: 'clarify', to: 'detail' };
     const doc = makeDoc([src, dec], [edge]);
     const routes = routeEdges(doc);
-    const r = routes.get('clarify->detail')!;
+    const r = findRoute(routes, doc, edge)!;
     const wp = r.waypoints!;
     const start = wp[0];
     const end = wp[wp.length - 1];
@@ -89,7 +89,7 @@ describe('scored port selection — decision target above-right of source', () =
     const edge: FlowEdge = { from: 'clarify', to: 'detail' };
     const doc = makeDoc([src, dec], [edge]);
     const routes = routeEdges(doc);
-    const r = routes.get('clarify->detail')!;
+    const r = findRoute(routes, doc, edge)!;
     const wp = r.waypoints!;
     const start = wp[0];
     const end = wp[wp.length - 1];
@@ -117,8 +117,8 @@ describe('line-jump post-pass — perpendicular crossings', () => {
     ];
     const doc = makeDoc([a1, a2, b1, b2], edges);
     const routes = routeEdges(doc);
-    const aPath = routes.get('a1->a2')!.pathData;
-    const bPath = routes.get('b1->b2')!.pathData;
+    const aPath = findRoute(routes, doc, edges[0])!.pathData;
+    const bPath = findRoute(routes, doc, edges[1])!.pathData;
     // One of the two paths should contain an SVG arc command (the bump).
     const hasArc = (s: string) => /A\d/.test(s);
     expect(hasArc(aPath) || hasArc(bPath)).toBe(true);
@@ -136,8 +136,8 @@ describe('line-jump post-pass — perpendicular crossings', () => {
     ];
     const doc = makeDoc([src, a, b], edges);
     const routes = routeEdges(doc);
-    const pa = routes.get('S->A')!.pathData;
-    const pb = routes.get('S->B')!.pathData;
+    const pa = findRoute(routes, doc, edges[0])!.pathData;
+    const pb = findRoute(routes, doc, edges[1])!.pathData;
     expect(/A\d/.test(pa)).toBe(false);
     expect(/A\d/.test(pb)).toBe(false);
   });
@@ -154,8 +154,8 @@ describe('line-jump post-pass — perpendicular crossings', () => {
     ];
     const doc = makeDoc([a1, a2, b1, b2], edges);
     const routes = routeEdges(doc);
-    expect(/A\d/.test(routes.get('a1->a2')!.pathData)).toBe(false);
-    expect(/A\d/.test(routes.get('b1->b2')!.pathData)).toBe(false);
+    expect(/A\d/.test(findRoute(routes, doc, edges[0])!.pathData)).toBe(false);
+    expect(/A\d/.test(findRoute(routes, doc, edges[1])!.pathData)).toBe(false);
   });
 
   it('retry/dashed edge yields to non-retry edge when they cross', () => {
@@ -172,9 +172,10 @@ describe('line-jump post-pass — perpendicular crossings', () => {
         { from: 'a1', to: 'a2' },                  // normal (vertical)
         { from: 'b1', to: 'b2', retry: true },     // retry (horizontal)
       ];
-      const routes = routeEdges(makeDoc([a1, a2, b1, b2], edges));
-      const norm = routes.get('a1->a2')!.pathData;
-      const retry = routes.get('b1->b2')!.pathData;
+      const doc = makeDoc([a1, a2, b1, b2], edges);
+      const routes = routeEdges(doc);
+      const norm = findRoute(routes, doc, edges[0])!.pathData;
+      const retry = findRoute(routes, doc, edges[1])!.pathData;
       expect(/A\d/.test(norm)).toBe(false);
       expect(/A\d/.test(retry)).toBe(true);
     }
@@ -186,9 +187,10 @@ describe('line-jump post-pass — perpendicular crossings', () => {
         { from: 'b1', to: 'b2', retry: true },
         { from: 'a1', to: 'a2' },
       ];
-      const routes = routeEdges(makeDoc([a1, a2, b1, b2], edges));
-      const norm = routes.get('a1->a2')!.pathData;
-      const retry = routes.get('b1->b2')!.pathData;
+      const doc = makeDoc([a1, a2, b1, b2], edges);
+      const routes = routeEdges(doc);
+      const norm = findRoute(routes, doc, edges[1])!.pathData;
+      const retry = findRoute(routes, doc, edges[0])!.pathData;
       expect(/A\d/.test(norm)).toBe(false);
       expect(/A\d/.test(retry)).toBe(true);
     }
@@ -208,7 +210,7 @@ describe('line-jump post-pass — perpendicular crossings', () => {
 
     // Forward edge Clarify Goal -> Enough Detail?
     const fwd = doc.edges.find(e => e.from === clarify.id && e.to === detail.id)!;
-    const r = routes.get(`${fwd.from}->${fwd.to}`)!;
+    const r = findRoute(routes, doc, fwd)!;
     const wp = r.waypoints!;
     const end = wp[wp.length - 1];
     // The forward edge should enter the decision from the top tip.
@@ -228,8 +230,8 @@ describe('line-jump post-pass — perpendicular crossings', () => {
     const doc = makeDoc([a1, a2, b1, b2], edges);
     doc.directives.push({ key: 'line-jumps', value: 'off' });
     const routes = routeEdges(doc);
-    const aPath = routes.get('a1->a2')!.pathData;
-    const bPath = routes.get('b1->b2')!.pathData;
+    const aPath = findRoute(routes, doc, edges[0])!.pathData;
+    const bPath = findRoute(routes, doc, edges[1])!.pathData;
     expect(/A\d/.test(aPath)).toBe(false);
     expect(/A\d/.test(bPath)).toBe(false);
   });

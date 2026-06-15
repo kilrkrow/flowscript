@@ -10,6 +10,7 @@ import { renderNode } from './shapes/index.js';
 import type { FlowDocument, FlowEdge } from '../parser/ast.js';
 import type { Theme } from '../themes/clean.js';
 import type { RouteResult } from '../layout/router.js';
+import { edgeId } from '../layout/router.js';
 
 export interface WatermarkConfig {
   lines:    string[];   // one or two lines of text
@@ -303,8 +304,8 @@ function renderGroups(doc: FlowDocument, theme: Theme): SvgElement {
 }
 
 function renderEdges(doc: FlowDocument, routes: Map<string, RouteResult>, theme: Theme): SvgElement {
-  const edgeEls = doc.edges.map(edge => {
-    const key = `${edge.from}->${edge.to}`;
+  const edgeEls = doc.edges.map((edge, i) => {
+    const key = edgeId(i, edge);
     const route = routes.get(key);
     if (!route) return el('g', {});
 

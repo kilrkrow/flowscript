@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parse } from '../src/parser/parser.js';
 import { layoutDocument } from '../src/layout/dagre-layout.js';
-import { routeEdges } from '../src/layout/router.js';
+import { routeEdges, findRoute } from '../src/layout/router.js';
 import { render } from '../src/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -65,7 +65,7 @@ describe('multi-branch decision (3+ branches)', () => {
     expect(branchEdges.length).toBeGreaterThanOrEqual(3);
 
     const starts = branchEdges
-      .map(e => routes.get(`${e.from}->${e.to}`)!)
+      .map(e => findRoute(routes, doc, e)!)
       .map(r => pathStart(r.pathData));
 
     // Every branch must originate from a distinct (x, y) on the diamond
@@ -87,7 +87,7 @@ describe('multi-branch decision (3+ branches)', () => {
       e => e.from === decision.id && e.condition,
     );
     for (const edge of branchEdges) {
-      const r = routes.get(`${edge.from}->${edge.to}`);
+      const r = findRoute(routes, doc, edge);
       expect(r).toBeDefined();
       expect(r!.pathData).toMatch(/^M[-\d.]+,[-\d.]+/);
       // Path must have at least one drawn segment beyond the move.
@@ -121,8 +121,8 @@ describe('multi-branch decision (3+ branches)', () => {
     const decision = [...doc.nodes.values()].find(n => n.shape === 'decision')!;
     const yes = doc.edges.find(e => e.from === decision.id && e.condition === 'yes')!;
     const no = doc.edges.find(e => e.from === decision.id && e.condition === 'no')!;
-    const yStart = pathStart(routes.get(`${yes.from}->${yes.to}`)!.pathData);
-    const nStart = pathStart(routes.get(`${no.from}->${no.to}`)!.pathData);
+    const yStart = pathStart(findRoute(routes, doc, yes)!.pathData);
+    const nStart = pathStart(findRoute(routes, doc, no)!.pathData);
 
     // Yes exits south (y at the bottom tip of the diamond)
     const tipY = (decision.y ?? 0) + (decision.height ?? 0) / 2;
@@ -152,7 +152,7 @@ describe('multi-branch decision (3+ branches)', () => {
     expect(retry.retry).toBe(true);
 
     const starts = out
-      .map(e => routes.get(`${e.from}->${e.to}`)!)
+      .map(e => findRoute(routes, doc, e)!)
       .map(r => pathStart(r.pathData));
 
     // No two branches share the same exit point.

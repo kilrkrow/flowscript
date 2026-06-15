@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parse } from '../src/parser/parser.js';
 import { layoutDocument } from '../src/layout/dagre-layout.js';
-import { routeEdges } from '../src/layout/router.js';
+import { routeEdges, findRoute } from '../src/layout/router.js';
 import { render } from '../src/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -118,7 +118,8 @@ describe('incident response (multi-decision + self-loop)', () => {
   it('routes the decision self-loop to a non-degenerate, NaN-free path', () => {
     const { doc, routes } = pipeline(loadFixture());
     const dArrived = nodeByLabel(doc, 'Have they arrived?');
-    const r = routes.get(`${dArrived.id}->${dArrived.id}`);
+    const selfLoopEdge = doc.edges.find(e => e.from === dArrived.id && e.to === dArrived.id)!;
+    const r = findRoute(routes, doc, selfLoopEdge);
     expect(r).toBeDefined();
 
     const path = r!.pathData;

@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parse } from '../src/parser/parser.js';
 import { layoutDocument } from '../src/layout/dagre-layout.js';
-import { routeEdges } from '../src/layout/router.js';
+import { routeEdges, findRoute } from '../src/layout/router.js';
 import { render } from '../src/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -47,7 +47,7 @@ describe('grid port pressure — incident response', () => {
     );
     expect(yesEdge).toBeDefined();
 
-    const r = routes.get(`${decision.id}->${monitor.id}`);
+    const r = findRoute(routes, doc, yesEdge!);
     expect(r).toBeDefined();
     const start = r!.waypoints![0];
 
@@ -68,7 +68,7 @@ describe('grid port pressure — learning flow', () => {
     const entries: Array<{ from: string; x: number; y: number; side: string }> = [];
     for (const e of doc.edges) {
       if (e.to !== target.id) continue;
-      const r = routes.get(`${e.from}->${e.to}`);
+      const r = findRoute(routes, doc, e);
       if (!r?.waypoints) continue;
       const end = r.waypoints[r.waypoints.length - 1];
       const dx = end.x - (target.x ?? 0);
@@ -120,7 +120,7 @@ describe('grid port pressure — learning flow', () => {
     const incoming = doc.edges
       .filter(e => e.to === target.id)
       .map(e => {
-        const r = routes.get(`${e.from}->${e.to}`)!;
+        const r = findRoute(routes, doc, e)!;
         const end = r.waypoints![r.waypoints!.length - 1];
         return { from: e.from, end };
       });
@@ -144,8 +144,10 @@ describe('grid port pressure — learning flow', () => {
     const read = nodeByLabel(doc, 'Read Introduction');
     const reWatch = nodeByLabel(doc, 'Re-watch Demo Video');
 
-    const fwd = routes.get(`${read.id}->${watch.id}`)!;
-    const back = routes.get(`${reWatch.id}->${watch.id}`)!;
+    const fwdEdge = doc.edges.find(e => e.from === read.id && e.to === watch.id)!;
+    const backEdge = doc.edges.find(e => e.from === reWatch.id && e.to === watch.id)!;
+    const fwd = findRoute(routes, doc, fwdEdge)!;
+    const back = findRoute(routes, doc, backEdge)!;
     expect(fwd).toBeDefined();
     expect(back).toBeDefined();
 
@@ -210,7 +212,7 @@ describe('grid port pressure — synthetic stacking', () => {
     const entries = doc.edges
       .filter(e => e.to === step.id && e.from !== step.id)
       .map(e => {
-        const r = routes.get(`${e.from}->${e.to}`);
+        const r = findRoute(routes, doc, e);
         return r?.waypoints?.[r.waypoints.length - 1];
       })
       .filter((p): p is { x: number; y: number } => !!p);

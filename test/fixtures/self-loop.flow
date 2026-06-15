@@ -1,0 +1,5 @@
+#start Start
+  #decision Is it done yet?
+    -> Yes: Done
+    -> No: Is it done yet?
+  #end Done
