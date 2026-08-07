@@ -78,17 +78,17 @@ These are the ground-truth spec. Any fix that breaks one of these is wrong, even
 
 1. **No pierce**: no path segment crosses any node's bounding box (node + 8px margin), except the two terminal segments connecting to ports.
 2. **Entry direction matches flow**: forward edges enter N; cross-column forward edges enter N (≥1 row below) or E/W (adjacent row); back-edges enter S or E/W depending on channel side.
-3. **Decision exits are semantic**: `yes`/`true` → S tip always; `no`/`false` → E/W tip toward target; other conditions → remaining tips scored by geometry.
+3. **Decision exits are geometric+semantic**: `yes`/`true` → tip aligned with target (S when below, E/W when cross-column or loop-back); `no`/`false` → E/W tip toward target; never exit N (reserved for inbound).
 4. **No port stacking**: two edges on the same face of the same node must have distinct (x,y) entry/exit points, separated ≥ 4px.
 5. **All coordinates finite**: every waypoint must be a finite number (no NaN, no Infinity).
 6. **Channel consistency**: the `channelX` used in waypoint construction must match the `channelX` used in port reservation. Mismatches cause wrong-face entry.
 
 ### Decision exit conventions (do not change without updating tests)
 
-- `yes`/`true` branches: **always exit S tip**, even when the target is above the decision in the layout (cross-column back-reference). The skip router uses the outer channel to loop back up.
-  - Exception: same-column back-edge (`|dx| ≤ 50`). These exit W by convention for a compact arc.
+- `yes`/`true` branches: score free cardinals `{S, E, W}` by alignment with `(dx, dy)` and pick the best. Same-column-below still resolves to S; cross-column and loop-backs pick the tip facing the target (avoids S-exit U-turns).
 - `no`/`false` branches: exit toward the target column (E if target is right, W if left).
 - The `assignDecisionExits()` pre-pass encodes these rules. Do not bypass it.
+- See also `test/loopback-port-selection.test.ts` for the geometry-aware pin regressions.
 
 ### Channel selection rules (do not break these)
 
@@ -105,6 +105,8 @@ These are the ground-truth spec. Any fix that breaks one of these is wrong, even
 - `entryPin` in `buildGridReservation` pins **all** skip edge entries (`isSkip ? dirs.entryDir : undefined`). This is required so multiple skip edges targeting the same face land in the same bucket and get spread via `applyReservationSpread`. Narrowing this back to S-only breaks spread for W/E entries.
 - `exitPin` for decisions is always the `assignDecisionExits` override. Never bypass it.
 - The two-pass order (exits first, then entries) is load-bearing. Reversing it breaks opposite-direction conflict detection.
+- Predicted-entry pre-pass in `reservePorts`: natural entry sides are stamped before the exit pass so exits see future inbound claims. Stamps are removed before the real entry pass.
+- `rankAround` order is preferred → near-perp → far-perp → axis-opposite (not preferred → opposite → perp).
 
 ### Known remaining visual issues (not yet tested)
 

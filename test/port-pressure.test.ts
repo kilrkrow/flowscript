@@ -2,9 +2,10 @@
  * Port-pressure tests for the grid router.
  *
  * Two scenarios from the reviewed examples:
- *   1. incident-response: when a decision says `yes`, the routed path
- *      should start at the south tip of the diamond (the natural
- *      continuation), not collapse onto another side.
+ *   1. incident-response: when a decision says `yes` toward a target in
+ *      a different column, geometry-aware pinning exits the tip that
+ *      faces the target (not an S tip + U-turn). Under adaptive side
+ *      columns, "Monitor until resolved" lands in W1, so yes exits W.
  *   2. learning-flow: when multiple skip / cross-column edges all
  *      converge on the same target side, they should be spread along
  *      that side rather than stacking on a single point.
@@ -36,12 +37,16 @@ function nodeByLabel(doc: ReturnType<typeof parse>, label: string) {
 }
 
 describe('grid port pressure — incident response', () => {
-  it('"Yes" from `Have they arrived?` exits the south tip of the diamond', () => {
+  it('"Yes" from `Have they arrived?` exits the west tip toward Monitor', () => {
+    // Geometry-aware decision pinning: when the yes-branch target sits
+    // in a different column from the source decision, the exit cardinal
+    // points toward the target rather than dropping out the south tip
+    // and U-turning. Adaptive layout places Monitor in W1 (west of the
+    // diamond), so the yes edge should leave the west tip.
     const { doc, routes } = pipeline('incident-response.flow');
     const decision = nodeByLabel(doc, 'Have they arrived?');
     const monitor = nodeByLabel(doc, 'Monitor until resolved');
 
-    // The yes-branch from this decision targets Monitor.
     const yesEdge = doc.edges.find(
       e => e.from === decision.id && e.to === monitor.id && e.condition === 'yes',
     );
@@ -51,10 +56,10 @@ describe('grid port pressure — incident response', () => {
     expect(r).toBeDefined();
     const start = r!.waypoints![0];
 
-    // South tip of a decision diamond: x = center, y = center + height/2.
-    const expectedY = (decision.y ?? 0) + (decision.height ?? 0) / 2;
-    expect(start.y).toBeCloseTo(expectedY, 1);
-    expect(start.x).toBeCloseTo(decision.x ?? 0, 1);
+    // West tip of the diamond (decisionPort uses 0.9 * hw inset).
+    const hw = (decision.width ?? 0) / 2;
+    expect(start.x).toBeCloseTo((decision.x ?? 0) - hw * 0.9, 1);
+    expect(start.y).toBeCloseTo(decision.y ?? 0, 1);
   });
 });
 
