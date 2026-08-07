@@ -69,7 +69,7 @@ src/themes/      clean.ts             → stroke, fill, font tokens
 
 - `anyNodeBetweenSourceAndChannel` checks only between `source.x` and `channelX`, not to infinity. Do not widen this check.
 - `usingSouthEntry` threshold is `< width * 0.25`. It must stay tight or paths enter nodes from wrong faces.
-- `usingTopEntry` fires when `toRow > fromRow` (not `+ 1`) — catches adjacent-row cross-column forward edges.
+- `usingTopEntry` only fires when the channel is on the *far* side of the target (outer loop). Near-side inter-column channels use E/W entry facing the channel (issue #29).
 - `calculateBounds` in `svg.ts` walks route waypoints as well as node bounding boxes. Outer-channel paths extend beyond nodes.
 
 ### Routing correctness invariants (must all hold after every route)
@@ -77,7 +77,7 @@ src/themes/      clean.ts             → stroke, fill, font tokens
 These are the ground-truth spec. Any fix that breaks one of these is wrong, even if it fixes a visual issue.
 
 1. **No pierce**: no path segment crosses any node's bounding box (node + 8px margin), except the two terminal segments connecting to ports.
-2. **Entry direction matches flow**: forward edges enter N; cross-column forward edges enter N (≥1 row below) or E/W (adjacent row); back-edges enter S or E/W depending on channel side.
+2. **Entry direction matches flow**: same-column forward edges enter N; cross-column edges enter the face that faces the source column / channel (E or W); back-edges enter S or E/W depending on channel side. Do not force N merely because `toRow > fromRow`.
 3. **Decision exits are geometric+semantic**: `yes`/`true` → tip aligned with target (S when below, E/W when cross-column or loop-back); `no`/`false` → E/W tip toward target; never exit N (reserved for inbound).
 4. **No port stacking**: two edges on the same face of the same node must have distinct (x,y) entry/exit points, separated ≥ 4px.
 5. **All coordinates finite**: every waypoint must be a finite number (no NaN, no Infinity).
