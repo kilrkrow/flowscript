@@ -190,24 +190,23 @@ describe('incident-response — Monitor entry-side regression', () => {
     const arrived = nodeByLabel(doc, 'Have they arrived?');
     const event = nodeByLabel(doc, 'Is there an event requiring police?');
 
-    // Sanity: the no-branch from "Is there an event requiring police?"
-    // already reaches Monitor on its N port.
+    // Cross-column "no" from the main-column decision enters Monitor from
+    // the E face (the side that faces the source column / inter-column
+    // channel) — not N (issue #29).
     const noEdgeObj = doc.edges.find(e => e.from === event.id && e.to === monitor.id && e.condition === 'no')!;
     const noEdge = findRoute(routes, doc, noEdgeObj)!;
     const noEnd = noEdge.waypoints![noEdge.waypoints!.length - 1];
-    expect(classifySide(monitor, noEnd)).toBe('N');
+    expect(classifySide(monitor, noEnd)).toBe('E');
 
-    // The yes-branch from "Have they arrived?" must therefore enter on
-    // a side OTHER than N. Geometry-aware pinning exits the diamond's
-    // W tip (Monitor is in W1); the skip channel then re-enters Monitor
-    // from the east face, which is free of the N inbound and the S
-    // outbound toward Resolved?.
+    // The yes-branch from "Have they arrived?" also approaches via the
+    // near-side channel and enters E. Both edges share the face and must
+    // be spread to distinct pixels (not stacked, not diverted to N).
     const yesEdgeObj = doc.edges.find(e => e.from === arrived.id && e.to === monitor.id && e.condition === 'yes')!;
     const yesEdge = findRoute(routes, doc, yesEdgeObj)!;
     const yesEnd = yesEdge.waypoints![yesEdge.waypoints!.length - 1];
     const side = classifySide(monitor, yesEnd);
-    expect(side).not.toBe('N');
     expect(side).toBe('E');
+    expect(Math.hypot(yesEnd.x - noEnd.x, yesEnd.y - noEnd.y)).toBeGreaterThan(4);
   });
 });
 
