@@ -31,7 +31,7 @@ Three tests were failing. All three traced to the same root cause: **the `channe
 
 All in `src/layout/router.ts`:
 
-1. `assignDecisionExits`: `yes/true` back-edges use S exit when `dx < -50` (westward cross-column, target placed above in a left side column due to layout). Same-column and eastward cross-column keep side exits.
+1. `assignDecisionExits`: `yes/true` exits are scored by alignment with `(dx, dy)` over free `{S, E, W}` (N reserved for inbound). Same-column-below still resolves to S; cross-column and loop-backs pick the tip facing the target instead of U-turning from S.
 
 2. `predictSkipDirs` signature: added `overrideExit?: CardinalDir` parameter.
 
@@ -53,7 +53,7 @@ These must hold after every route. Any LLM fix that breaks one of these is wrong
 
 1. No path segment pierces any node bounding box (+ 8px margin)
 2. Entry direction matches flow direction
-3. Decision exits are semantic (`yes`→S, `no`→E/W toward target)
+3. Decision exits are geometric+semantic (`yes`→tip aligned with target, preferring S when below; `no`→E/W toward target; never N)
 4. No two edges share the same port pixel on the same face
 5. All waypoint coordinates are finite
 6. Channel consistency: reservation and waypoint construction use the same channelX

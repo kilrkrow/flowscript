@@ -198,16 +198,16 @@ describe('incident-response — Monitor entry-side regression', () => {
     expect(classifySide(monitor, noEnd)).toBe('N');
 
     // The yes-branch from "Have they arrived?" must therefore enter on
-    // a side OTHER than N. The geometry — arrived sits south-west of
-    // Monitor and Monitor's S is opposite-role-occupied by the natural
-    // outbound flow toward Resolved? — pins the choice to W (the
-    // perpendicular cardinal facing the source's column).
+    // a side OTHER than N. Geometry-aware pinning exits the diamond's
+    // W tip (Monitor is in W1); the skip channel then re-enters Monitor
+    // from the east face, which is free of the N inbound and the S
+    // outbound toward Resolved?.
     const yesEdgeObj = doc.edges.find(e => e.from === arrived.id && e.to === monitor.id && e.condition === 'yes')!;
     const yesEdge = findRoute(routes, doc, yesEdgeObj)!;
     const yesEnd = yesEdge.waypoints![yesEdge.waypoints!.length - 1];
     const side = classifySide(monitor, yesEnd);
     expect(side).not.toBe('N');
-    expect(side).toBe('W');
+    expect(side).toBe('E');
   });
 });
 
