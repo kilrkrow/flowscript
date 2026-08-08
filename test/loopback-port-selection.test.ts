@@ -49,11 +49,12 @@ describe('loop-back exit port selection', () => {
     expect(start.y).toBeCloseTo(decision.y ?? 0, 1);
   });
 
-  it('learning-flow: "Iterate On Project" iterate edge does not reuse inbound faces', () => {
-    // Inbounds from "Project meets criteria?" and "Reviewer approved?"
-    // both enter W (facing main). The iterate edge back to "Build Capstone
-    // Project" (above in main) must not exit W on top of those entries.
-    // With free N and a target above, N is the natural exit.
+  it('learning-flow: "Iterate On Project" iterate edge leaves the E side', () => {
+    // n16's N and W sides are claimed by incoming edges. The dotted
+    // iterate edge to "Build Capstone Project" used to grab N too —
+    // port reuse. With entry-aware exit reservation it sees N as
+    // opposite-role-occupied and the perpendicular-near tiebreaker in
+    // rankAround picks E.
     const { doc, routes } = pipeline('learning-flow.flow');
     const iter = nodeByLabel(doc, 'Iterate On Project');
     const target = nodeByLabel(doc, 'Build Capstone Project');
@@ -62,9 +63,8 @@ describe('loop-back exit port selection', () => {
     const r = findRoute(routes, doc, edge!);
     expect(r).toBeDefined();
     const start = r!.waypoints![0];
-    // N face of the rect: x = center, y = top.
-    expect(start.x).toBeCloseTo(iter.x ?? 0, 1);
-    expect(start.y).toBeCloseTo((iter.y ?? 0) - (iter.height ?? 0) / 2, 1);
+    expect(start.x).toBeCloseTo((iter.x ?? 0) + (iter.width ?? 0) / 2, 1);
+    expect(start.y).toBeCloseTo(iter.y ?? 0, 1);
   });
 
   it('incident-response: yes from "Have they arrived?" exits the W tip', () => {
