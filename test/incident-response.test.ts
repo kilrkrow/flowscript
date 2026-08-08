@@ -139,10 +139,32 @@ describe('incident response (multi-decision + self-loop)', () => {
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(20);
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(20);
 
+    // Final approach into N must be long enough for marker-end to read as
+    // an arrow (taste P5). Waypoint chord ≥ ~36px; path last straight L
+    // still ≥ arrow length after corner rounding.
+    const wps = r!.waypoints!;
+    const a = wps[wps.length - 2];
+    const b = wps[wps.length - 1];
+    expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeGreaterThanOrEqual(36);
+    // Last path command should be a vertical/horizontal L into the tip.
+    expect(path).toMatch(/L-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$/);
+
     // The label must be placed somewhere along the visible path, not
     // at exactly (0,0) or stuck on the node center.
     expect(Number.isFinite(r!.labelPosition.x)).toBe(true);
     expect(Number.isFinite(r!.labelPosition.y)).toBe(true);
+  });
+
+  it('self-loop no-edge renders with a marker-end arrowhead', () => {
+    const source = loadFixture();
+    const { doc } = pipeline(source);
+    const svg = render(source);
+    const dArrived = nodeByLabel(doc, 'Have they arrived?');
+    // Self-loop group must request the no-arrow marker.
+    const re = new RegExp(
+      `data-from="${dArrived.id}" data-to="${dArrived.id}"[\\s\\S]*?marker-end="url\\(#fs-arrow-no\\)"`,
+    );
+    expect(svg).toMatch(re);
   });
 
   it('every routed edge has a NaN-free path with drawn geometry', () => {
