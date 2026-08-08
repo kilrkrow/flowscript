@@ -139,14 +139,18 @@ describe('incident response (multi-decision + self-loop)', () => {
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(20);
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(20);
 
-    // Final approach into N must be long enough for marker-end to read as
-    // an arrow (taste P5). Waypoint chord ≥ ~36px; path last straight L
-    // still ≥ arrow length after corner rounding.
+    // Horizontal bar sits mid-gap between Call Police bottom and diamond top
+    // (owner taste: not a fixed lift above the diamond).
+    const call = nodeByLabel(doc, 'Call Police');
+    const callBottom = (call.y ?? 0) + (call.height ?? 0) / 2;
+    const diamondTop = (dArrived.y ?? 0) - (dArrived.height ?? 0) / 2;
+    const expectedBarY = (callBottom + diamondTop) / 2;
     const wps = r!.waypoints!;
-    const a = wps[wps.length - 2];
-    const b = wps[wps.length - 1];
-    expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeGreaterThanOrEqual(36);
-    // Last path command should be a vertical/horizontal L into the tip.
+    // Bar is the horizontal run: waypoints with y ≈ topY before final drop.
+    const barY = wps[wps.length - 2].y;
+    expect(barY).toBeCloseTo(expectedBarY, 0);
+    // Final drop into N tip.
+    expect(wps[wps.length - 1].y).toBeCloseTo(diamondTop, 0);
     expect(path).toMatch(/L-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$/);
 
     // The label must be placed somewhere along the visible path, not

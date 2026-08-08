@@ -134,7 +134,7 @@ export function routeEdges(doc: FlowDocument): Map<string, RouteResult> {
 
     if (edge.from === edge.to) {
       // Self-loop — same on both routing strategies.
-      result = routeSelfLoop(edge, fromNode, cornerRadius, overrideExit);
+      result = routeSelfLoop(edge, fromNode, cornerRadius, overrideExit, doc, gridMeta);
     } else if (gridMeta && gridChannels && isSkip) {
       result = routeGridSkip(
         edge, fromNode, toNode, cornerRadius,
@@ -191,6 +191,7 @@ function routeEdge(
   overrideExit?: CardinalDir,
 ): RouteResult {
   if (edge.from === edge.to) {
+    // No doc context on this path — fall back to margin-based topY.
     return routeSelfLoop(edge, from, cornerRadius, overrideExit);
   }
   switch (style) {
@@ -206,29 +207,26 @@ function routeEdge(
 /**
  * Build a visible orthogonal self-loop on a single node.
  *
- * A self-loop edge has from === to, so the standard port picker collapses
- * the route into a zero-length path. Instead, we exit the node on a side
- * (E by default, or the side chosen by the multi-branch decision pre-pass),
- * step out by a fixed margin, hop up around the top, then re-enter through
- * the N port. The path always has at least four waypoints, so the renderer
- * has real geometry to draw and label.
+ * Exit a side tip, step out, run a horizontal bar, re-enter through N.
  *
- * Critical: the final approach into N must be long enough that `marker-end`
- * has a straight segment to orient on *outside* the node. Diamonds are
- * especially brittle — E tip is at mid-height, so `exit.y - margin` only
- * sits ~15px above the N tip, which after corner rounding leaves a sub-
- * arrow-length stub and the head vanishes into the tip (taste P5 / 05+08).
+ * Horizontal bar placement (owner taste / P5):
+ * When a node sits above this one in the same column, the bar sits at the
+ * **midpoint of the gap** between that node's bottom edge and this node's
+ * top edge (N tip for diamonds). Not a fixed margin above the E tip, and
+ * not an arbitrary lift above the diamond.
+ *
+ * Fallback when nothing is above: fixed margin above the N port.
  */
 function routeSelfLoop(
   edge: FlowEdge,
   node: FlowNode,
   cornerRadius: number,
   overrideExit?: CardinalDir,
+  doc?: FlowDocument,
+  gridMeta?: GridLayoutMeta,
 ): RouteResult {
   const r = Math.max(cornerRadius, 8);
   const margin = 32 + r;
-  // Room for arrowhead (~10px) + rounded corner on the last bend + cushion.
-  const minApproach = 36 + r;
 
   const exitDir: CardinalDir =
     overrideExit ?? (node.shape === 'decision'
@@ -238,8 +236,7 @@ function routeSelfLoop(
   const ports = getNodePorts(node);
   const exit = portForDir(ports, exitDir);
   const entry = ports.top;
-  // Horizontal bar of the loop must sit well above the N port.
-  const topY = Math.min(exit.y - margin, entry.y - minApproach);
+  const topY = selfLoopTopY(node, entry.y, margin, doc, gridMeta);
 
   let waypoints: Port[];
   if (exitDir === 'E') {
@@ -272,7 +269,7 @@ function routeSelfLoop(
       entry,
     ];
   } else {
-    // N exit — bump east, then re-enter N from well above.
+    // N exit — bump east, then re-enter N from the bar.
     const x = exit.x + margin;
     waypoints = [
       exit,
@@ -292,6 +289,52 @@ function routeSelfLoop(
     waypoints: waypoints.map(p => ({ x: p.x, y: p.y })),
     yieldOnCross: edge.retry === true,
   };
+}
+
+/**
+ * Y of the self-loop's horizontal bar.
+ * Prefer midpoint of [nearest same-column node bottom above, this top].
+ */
+function selfLoopTopY(
+  node: FlowNode,
+  nodeTopY: number,
+  fallbackMargin: number,
+  doc?: FlowDocument,
+  gridMeta?: GridLayoutMeta,
+): number {
+  const aboveBottom = nearestBottomAbove(node, nodeTopY, doc, gridMeta);
+  if (aboveBottom !== undefined && aboveBottom < nodeTopY) {
+    return (aboveBottom + nodeTopY) / 2;
+  }
+  return nodeTopY - fallbackMargin;
+}
+
+/** Bottom edge Y of the closest node strictly above `nodeTopY` (same col first). */
+function nearestBottomAbove(
+  node: FlowNode,
+  nodeTopY: number,
+  doc?: FlowDocument,
+  gridMeta?: GridLayoutMeta,
+): number | undefined {
+  if (!doc) return undefined;
+  const col = gridMeta?.nodeColumn.get(node.id);
+
+  const scan = (sameColOnly: boolean): number | undefined => {
+    let best: number | undefined;
+    for (const [id, other] of doc.nodes) {
+      if (id === node.id) continue;
+      if (sameColOnly && col && gridMeta) {
+        if (gridMeta.nodeColumn.get(id) !== col) continue;
+      }
+      const bot = (other.y ?? 0) + (other.height ?? 44) / 2;
+      // Strictly above the top of this node.
+      if (bot >= nodeTopY - 0.5) continue;
+      if (best === undefined || bot > best) best = bot;
+    }
+    return best;
+  };
+
+  return scan(true) ?? scan(false);
 }
 
 // --- Connection port helpers ---
