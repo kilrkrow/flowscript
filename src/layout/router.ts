@@ -213,11 +213,8 @@ function routeEdge(
  * the N port. The path always has at least four waypoints, so the renderer
  * has real geometry to draw and label.
  *
- * Critical: the final approach into N must be long enough that `marker-end`
- * has a straight segment to orient on *outside* the node. Diamonds are
- * especially brittle — E tip is at mid-height, so `exit.y - margin` only
- * sits ~15px above the N tip, which after corner rounding leaves a sub-
- * arrow-length stub and the head vanishes into the tip (taste P5 / 05+08).
+ * The margin scales with corner radius so loops on the same node don't
+ * overlap the rounded edge of an adjacent route.
  */
 function routeSelfLoop(
   edge: FlowEdge,
@@ -227,8 +224,6 @@ function routeSelfLoop(
 ): RouteResult {
   const r = Math.max(cornerRadius, 8);
   const margin = 32 + r;
-  // Room for arrowhead (~10px) + rounded corner on the last bend + cushion.
-  const minApproach = 36 + r;
 
   const exitDir: CardinalDir =
     overrideExit ?? (node.shape === 'decision'
@@ -238,26 +233,26 @@ function routeSelfLoop(
   const ports = getNodePorts(node);
   const exit = portForDir(ports, exitDir);
   const entry = ports.top;
-  // Horizontal bar of the loop must sit well above the N port.
-  const topY = Math.min(exit.y - margin, entry.y - minApproach);
 
   let waypoints: Port[];
   if (exitDir === 'E') {
     const x = exit.x + margin;
+    const y = exit.y - margin;
     waypoints = [
       exit,
       { x, y: exit.y },
-      { x, y: topY },
-      { x: entry.x, y: topY },
+      { x, y },
+      { x: entry.x, y },
       entry,
     ];
   } else if (exitDir === 'W') {
     const x = exit.x - margin;
+    const y = exit.y - margin;
     waypoints = [
       exit,
       { x, y: exit.y },
-      { x, y: topY },
-      { x: entry.x, y: topY },
+      { x, y },
+      { x: entry.x, y },
       entry,
     ];
   } else if (exitDir === 'S') {
@@ -267,18 +262,19 @@ function routeSelfLoop(
       exit,
       { x: exit.x, y },
       { x, y },
-      { x, y: topY },
-      { x: entry.x, y: topY },
+      { x, y: entry.y - margin },
+      { x: entry.x, y: entry.y - margin },
       entry,
     ];
   } else {
-    // N exit — bump east, then re-enter N from well above.
+    // N exit — wrap right side
+    const y = exit.y - margin;
     const x = exit.x + margin;
     waypoints = [
       exit,
-      { x: exit.x, y: topY },
-      { x, y: topY },
-      { x: entry.x, y: topY },
+      { x: exit.x, y },
+      { x, y },
+      { x, y: entry.y },
       entry,
     ];
   }
