@@ -28,12 +28,13 @@ When **two edges converge** on one side-column node, channel-facing side entry (
 - Evidence: `06` B > A, A ok  
 - Must not override P1 on simple single-edge below-side cases
 
-### P5 — Self-loop terminal arrow (defect, not taste)
-Decision **No** self-loops must **terminate with a visible arrowhead** into the diamond.
+### P5 — Self-loop bar + terminal arrow
+Decision **No** self-loops:
+1. Horizontal bar at **mid-gap** between nearest same-column node’s **bottom** and this diamond’s **top** (N tip).
+2. Drop into N with a visible **arrowhead**.
 
-- **Cause:** final approach into N was ~15px (diamond E tip mid-height); after rounding, stub shorter than arrow → head vanished into tip.
-- **Fix (branch `fix-self-loop-arrow`):** `routeSelfLoop` keeps top bar ≥ `entry.y - (36+r)` so last straight ≥ arrow length.
-- Re-verify on taste `05` / `08` after merge.
+- Not a fixed margin above E tip; not an arbitrary lift above the diamond alone.
+- Fallback when nothing is above: margin above N port.
 
 ## Priority when principles conflict
 
