@@ -379,7 +379,9 @@ class Parser {
     if (this.implicitPrev && shape !== 'start') {
       this.addEdge(this.implicitPrev, nodeId);
     }
-    this.implicitPrev = nodeId;
+    // An #end is terminal: it must not chain into the next sibling line
+    // (issue #39).
+    this.implicitPrev = shape === 'end' ? null : nodeId;
 
     // Parse decision branches (indented -> yes: / -> no:)
     if (shape === 'decision') {
@@ -470,7 +472,7 @@ class Parser {
     if (this.implicitPrev) {
       this.addEdge(this.implicitPrev, nodeId);
     }
-    this.implicitPrev = nodeId;
+    this.implicitPrev = shape === 'end' ? null : nodeId;
 
     return nodeId;
   }
