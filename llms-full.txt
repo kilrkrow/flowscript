@@ -170,7 +170,7 @@ Only `title` and `subtitle` are rendered in SVG output; others are metadata.
 ---
 title: Incident Response
 subtitle: Security Operations Center Protocol
-author: Guy Schamp
+author: kilrkrow
 version: 2.1
 ---
 ```
