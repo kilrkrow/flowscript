@@ -61,4 +61,4 @@ Questions, ideas and bug reports are welcome in [Issues](https://github.com/kilr
 
 ---
 
-Built by Guy Schamp · [Fox & Dove](https://foxanddoveconsulting.com) · more tools at [github.com/kilrkrow](https://github.com/kilrkrow)
+Built by kilrkrow · [Fox & Dove](https://foxanddoveconsulting.com) · more tools at [github.com/kilrkrow](https://github.com/kilrkrow)
