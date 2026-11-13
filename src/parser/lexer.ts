@@ -130,6 +130,7 @@ function tokenizeLine(line: string, lineNum: number, baseCol: number, tokens: To
   }
 
   while (pos < line.length) {
+    const loopStart = pos;
     skipSpaces();
     if (pos >= line.length) break;
 
@@ -247,35 +248,78 @@ function tokenizeLine(line: string, lineNum: number, baseCol: number, tokens: To
       continue;
     }
 
-    // Text segment — everything up to a special character
+    // Comment: // starts a comment at line start or after whitespace
+    // (skipSpaces has just run, so this position is one of those).
+    if (peek() === '/' && line[pos + 1] === '/') {
+      tokens.push({ type: 'COMMENT', value: line.slice(pos + 2).trim(), line: lineNum, col: c });
+      pos = line.length;
+      continue;
+    }
+
+    // Text segment: everything up to a special character
     const text = readTextSegment(line, pos, lineNum);
     if (text.value) {
       tokens.push({ type: 'TEXT', value: text.value, line: lineNum, col: c });
     }
     pos = text.endPos;
+
+    // No-progress guard: a missed character must not freeze the tokenizer.
+    if (pos <= loopStart) {
+      pos++;
+    }
   }
 }
 
 /**
  * Read a text segment until we hit a special character or end of line.
- * Special characters that terminate text: -> : , { } " @  #
+ * Special characters that terminate text: -> ~> : , { } " @ #
+ *
+ * Comment rule: // starts a comment only at line start or after
+ * whitespace. // inside a token (http://example.com, a//b) stays
+ * in the label. A URL scheme (://) does not terminate the token
+ * at the colon, so the URL stays a single TEXT token.
  */
 function readTextSegment(line: string, startPos: number, _lineNum: number): { value: string; endPos: number } {
   let pos = startPos;
   let text = '';
 
   while (pos < line.length) {
-    // Stop at special characters
-    if (line[pos] === ':' || line[pos] === ',' || line[pos] === '{' || line[pos] === '}' || line[pos] === '"') break;
-    if (line[pos] === '-' && line[pos + 1] === '>') break;
-    if (line[pos] === '~' && line[pos + 1] === '>') break;
-    if (line[pos] === '@' && pos > startPos) break;
-    if (line[pos] === '#' && pos > startPos) break;
-    // Inline comment
-    if (line[pos] === '/' && line[pos + 1] === '/') break;
+    const loopStart = pos;
 
-    text += line[pos];
-    pos++;
+    // Stop at special characters
+    if (line[pos] === ',' || line[pos] === '{' || line[pos] === '}' || line[pos] === '"') break;
+
+    // Colon terminates text unless it starts a URL scheme (://)
+    if (line[pos] === ':') {
+      if (line[pos + 1] === '/' && line[pos + 2] === '/') {
+        text += '://';
+        pos += 3;
+      } else {
+        break;
+      }
+    } else if (line[pos] === '-' && line[pos + 1] === '>') {
+      break;
+    } else if (line[pos] === '~' && line[pos + 1] === '>') {
+      break;
+    } else if (line[pos] === '@' && pos > startPos) {
+      break;
+    } else if (line[pos] === '#' && pos > startPos) {
+      break;
+    } else if (line[pos] === '/' && line[pos + 1] === '/') {
+      // // starts a comment only at line start or after whitespace
+      const afterWs = pos === 0 || line[pos - 1] === ' ' || line[pos - 1] === '\t';
+      if (afterWs) break;
+      text += '//';
+      pos += 2;
+    } else {
+      text += line[pos];
+      pos++;
+    }
+
+    // No-progress guard: force a one-character advance rather than stall.
+    if (pos <= loopStart) {
+      pos++;
+    }
   }
 
   return { value: text.trim(), endPos: pos };

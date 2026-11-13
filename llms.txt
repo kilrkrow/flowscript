@@ -63,6 +63,12 @@ into a polished SVG flowchart. The compiler pipeline is: **parse → layout → 
 npx tsx scripts/gen-svg.ts learning-flow   # renders test/fixtures/learning-flow.flow
 ```
 
+## Comments
+
+`//` starts a comment only at the beginning of a line or after whitespace. The remainder of the line is ignored.
+
+`//` inside a token is part of the label, not a comment. Examples: `http://example.com` and `a//b`.
+
 ## Full syntax spec
 
 See `llms-full.txt` in this directory for the complete, LLM-optimized specification

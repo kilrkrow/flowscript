@@ -51,6 +51,19 @@ bun test               # run all tests
 bun test --watch       # watch mode
 ```
 
+## Comments
+
+`//` starts a comment only at the beginning of a line or after whitespace. The rest of that line is a comment and is dropped.
+
+`//` inside a token stays in the label. URLs such as `http://example.com` and tokens such as `a//b` are not treated as comments.
+
+```
+// A full-line comment
+#start foo // an inline comment; the node label is "foo"
+#start See http://example.com
+#start a//b
+```
+
 ## License
 
 [Elastic License 2.0](LICENSE)

@@ -444,13 +444,16 @@ Swimlanes automatically use the dagre layout engine (not grid).
 
 ## Comments
 
-Full-line comments only. Inline comments (end of a node line) are not supported.
+`//` starts a comment only at the beginning of a line or after whitespace. The rest of that line is ignored.
+
+`//` inside a token stays part of the label (for example a URL such as `http://example.com`, or `a//b`).
 
 ```
-// This is a valid comment
+// This is a valid full-line comment
 #start Begin
-  Step One    // INVALID: this text is part of the node label, not a comment
-  Step Two
+  Step One    // inline comment; the node label is "Step One"
+  See http://example.com
+  a//b
 // Another comment
   #end Done
 ```
