@@ -1,6 +1,6 @@
 {
   "name": "@kilrkrow/flowscript",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A human-craftable diagram DSL that renders clean, Visio-quality output",
   "type": "module",
   "main": "dist/index.js",

@@ -13,6 +13,18 @@ var __export = (target, all) => {
     });
 };
 
+// node_modules/@dagrejs/dagre/dist/dagre.esm.js
+var exports_dagre_esm = {};
+__export(exports_dagre_esm, {
+  Graph: () => p,
+  debug: () => fe,
+  default: () => To,
+  graphlib: () => z,
+  layout: () => he,
+  util: () => xo,
+  version: () => U
+});
+
 // src/parser/lexer.ts
 var SHAPE_KEYWORDS = new Set([
   "start",
@@ -107,6 +119,7 @@ function tokenizeLine(line, lineNum, baseCol, tokens) {
     }
   }
   while (pos < line.length) {
+    const loopStart = pos;
     skipSpaces();
     if (pos >= line.length)
       break;
@@ -138,9 +151,9 @@ function tokenizeLine(line, lineNum, baseCol, tokens) {
         tokens.push({ type: "SHAPE_KEYWORD", value: word, line: lineNum, col: c });
       } else {
         pos = wordStart - 1;
-        const text2 = readTextSegment(line, pos, lineNum);
-        tokens.push({ type: "TEXT", value: text2.value, line: lineNum, col: c });
-        pos = text2.endPos;
+        const text = readTextSegment(line, pos, lineNum);
+        tokens.push({ type: "TEXT", value: text.value, line: lineNum, col: c });
+        pos = text.endPos;
       }
       continue;
     }
@@ -202,31 +215,56 @@ function tokenizeLine(line, lineNum, baseCol, tokens) {
       tokens.push({ type: "CONDITION", value: str, line: lineNum, col: c });
       continue;
     }
+    if (peek() === "/" && line[pos + 1] === "/") {
+      tokens.push({ type: "COMMENT", value: line.slice(pos + 2).trim(), line: lineNum, col: c });
+      pos = line.length;
+      continue;
+    }
     const text = readTextSegment(line, pos, lineNum);
     if (text.value) {
       tokens.push({ type: "TEXT", value: text.value, line: lineNum, col: c });
     }
     pos = text.endPos;
+    if (pos <= loopStart) {
+      pos++;
+    }
   }
 }
 function readTextSegment(line, startPos, _lineNum) {
   let pos = startPos;
   let text = "";
   while (pos < line.length) {
-    if (line[pos] === ":" || line[pos] === "," || line[pos] === "{" || line[pos] === "}" || line[pos] === '"')
+    const loopStart = pos;
+    if (line[pos] === "," || line[pos] === "{" || line[pos] === "}" || line[pos] === '"')
       break;
-    if (line[pos] === "-" && line[pos + 1] === ">")
+    if (line[pos] === ":") {
+      if (line[pos + 1] === "/" && line[pos + 2] === "/") {
+        text += "://";
+        pos += 3;
+      } else {
+        break;
+      }
+    } else if (line[pos] === "-" && line[pos + 1] === ">") {
       break;
-    if (line[pos] === "~" && line[pos + 1] === ">")
+    } else if (line[pos] === "~" && line[pos + 1] === ">") {
       break;
-    if (line[pos] === "@" && pos > startPos)
+    } else if (line[pos] === "@" && pos > startPos) {
       break;
-    if (line[pos] === "#" && pos > startPos)
+    } else if (line[pos] === "#" && pos > startPos) {
       break;
-    if (line[pos] === "/" && line[pos + 1] === "/")
-      break;
-    text += line[pos];
-    pos++;
+    } else if (line[pos] === "/" && line[pos + 1] === "/") {
+      const afterWs = pos === 0 || line[pos - 1] === " " || line[pos - 1] === "\t";
+      if (afterWs)
+        break;
+      text += "//";
+      pos += 2;
+    } else {
+      text += line[pos];
+      pos++;
+    }
+    if (pos <= loopStart) {
+      pos++;
+    }
   }
   return { value: text.trim(), endPos: pos };
 }
@@ -723,12 +761,22 @@ class Parser {
     }
     return branchCount;
   }
+  guardProgress(loopStart) {
+    if (this.pos > loopStart)
+      return;
+    if (this.isAtEnd()) {
+      const t = this.peek();
+      throw new ParseError("parser made no progress", t.line, t.col);
+    }
+    this.advance();
+  }
   tryParseStyle() {
     if (this.peek().type !== "LBRACE")
       return null;
     this.advance();
     const style = {};
     while (this.peek().type !== "RBRACE" && !this.isAtEnd()) {
+      const loopStart = this.pos;
       if (this.peek().type === "TEXT") {
         const key = this.advance().value;
         if (this.peek().type === "COLON") {
@@ -758,17 +806,18 @@ class Parser {
         this.advance();
       if (this.peek().type === "NEWLINE")
         this.advance();
+      this.guardProgress(loopStart);
     }
     this.match("RBRACE");
     return Object.keys(style).length > 0 ? style : null;
   }
   ensureNode(label, shape, line) {
-    for (const [id2, node2] of this.doc.nodes) {
-      if (node2.label === label) {
-        if (shape !== "process" && node2.shape === "process") {
-          node2.shape = shape;
+    for (const [id, node] of this.doc.nodes) {
+      if (node.label === label) {
+        if (shape !== "process" && node.shape === "process") {
+          node.shape = shape;
         }
-        return id2;
+        return id;
       }
     }
     this.nodeCounter++;
@@ -809,16 +858,6 @@ class Parser {
   }
 }
 // node_modules/@dagrejs/dagre/dist/dagre.esm.js
-var exports_dagre_esm = {};
-__export(exports_dagre_esm, {
-  version: () => U,
-  util: () => xo,
-  layout: () => he,
-  graphlib: () => z,
-  default: () => To,
-  debug: () => fe,
-  Graph: () => p
-});
 var ge = Object.defineProperty;
 var hn = (e, n, t) => (n in e) ? ge(e, n, { enumerable: true, configurable: true, writable: true, value: t }) : e[n] = t;
 var fn = (e, n) => {
@@ -1776,7 +1815,7 @@ var Ue = at;
 function at(e) {
   let n = lt(e);
   e.graph().dummyChains.forEach((t) => {
-    let r = e.node(t), o = r.edgeObj, i = dt(e, n, o.v, o.w), s = i.path, a = i.lca, d = 0, l = s[d], u = true;
+    let r = e.node(t), o = r.edgeObj, i = dt(e, n, o.v, o.w), { path: s, lca: a } = i, d = 0, l = s[d], u = true;
     for (;t !== o.w; ) {
       if (r = e.node(t), u) {
         for (;(l = s[d]) !== a && e.node(l).maxRank < r.rank; )
@@ -2359,7 +2398,7 @@ function un(e) {
   e = A(e), Ft(e), Object.entries(ln(e)).forEach(([n, t]) => e.node(n).x = t);
 }
 function Ft(e) {
-  let n = N(e), t = e.graph(), r = t.ranksep, o = t.rankalign, i = 0;
+  let n = N(e), t = e.graph(), { ranksep: r, rankalign: o } = t, i = 0;
   n.forEach((s) => {
     let a = s.reduce((d, l) => {
       var c;
@@ -2553,7 +2592,7 @@ var To = sr;
 
 // src/parser/ast.ts
 function getDirective(doc, key, fallback) {
-  const d = doc.directives.find((d2) => d2.key === key);
+  const d = doc.directives.find((d) => d.key === key);
   return d ? d.value : fallback;
 }
 function getDirection(doc) {
@@ -2704,16 +2743,16 @@ function wrapLabel(label, nodeWidth) {
   const words = label.split(/\s+/).filter(Boolean);
   const lines = [];
   let cur = "";
-  for (const w2 of words) {
+  for (const w of words) {
     if (!cur) {
-      cur = w2;
+      cur = w;
       continue;
     }
-    if ((cur + " " + w2).length > maxChars) {
+    if ((cur + " " + w).length > maxChars) {
       lines.push(cur);
-      cur = w2;
+      cur = w;
     } else {
-      cur = cur + " " + w2;
+      cur = cur + " " + w;
     }
   }
   if (cur)
@@ -3027,9 +3066,9 @@ function layoutDocument(doc) {
   for (const edge of doc.edges) {
     const dagreEdge = g.edge(edge.from, edge.to);
     if (dagreEdge?.points) {
-      edge.points = dagreEdge.points.map((p2) => ({
-        x: Math.round(p2.x),
-        y: Math.round(p2.y)
+      edge.points = dagreEdge.points.map((p) => ({
+        x: Math.round(p.x),
+        y: Math.round(p.y)
       }));
     }
   }
@@ -3064,11 +3103,11 @@ function applySwimlaneLayout(doc, spacing) {
     xCursor += colWidth + LANE_GAP;
   }
   const yValues = new Set;
-  for (const [_2, node] of doc.nodes) {
+  for (const [_, node] of doc.nodes) {
     if (node.y !== undefined)
       yValues.add(Math.round(node.y));
   }
-  for (const [_2, node] of doc.nodes) {
+  for (const [_, node] of doc.nodes) {
     if (node.lane) {
       const col = laneX.get(node.lane);
       if (col) {
@@ -3077,7 +3116,7 @@ function applySwimlaneLayout(doc, spacing) {
     }
   }
   const rankBuckets = new Map;
-  for (const [_2, node] of doc.nodes) {
+  for (const [_, node] of doc.nodes) {
     if (!node.lane)
       continue;
     const key = `${node.lane}::${Math.round(node.y ?? 0)}`;
@@ -3085,7 +3124,7 @@ function applySwimlaneLayout(doc, spacing) {
       rankBuckets.set(key, []);
     rankBuckets.get(key).push(node);
   }
-  for (const [_2, bucket] of rankBuckets) {
+  for (const [_, bucket] of rankBuckets) {
     if (bucket.length <= 1)
       continue;
     const totalH = bucket.reduce((sum, n) => sum + (n.height ?? 44), 0) + (bucket.length - 1) * 20;
@@ -3096,7 +3135,7 @@ function applySwimlaneLayout(doc, spacing) {
     }
   }
   let minY = Infinity, maxY = -Infinity;
-  for (const [_2, node] of doc.nodes) {
+  for (const [_, node] of doc.nodes) {
     if (node.y === undefined)
       continue;
     const hh = (node.height ?? 44) / 2;
@@ -3123,13 +3162,13 @@ function applySwimlaneLayout(doc, spacing) {
 function getPortForNodeShape(node, dir, offset = 0) {
   const cx = node.x ?? 0;
   const cy = node.y ?? 0;
-  const w2 = node.width ?? 180;
+  const w = node.width ?? 180;
   const h = node.height ?? 44;
-  const hw = w2 / 2;
+  const hw = w / 2;
   const hh = h / 2;
   switch (node.shape) {
     case "circle":
-      return circlePort(cx, cy, w2, h, dir, offset);
+      return circlePort(cx, cy, w, h, dir, offset);
     case "decision":
       return decisionPort(cx, cy, hw, hh, dir);
     default:
@@ -3160,8 +3199,8 @@ function decisionPort(cx, cy, hw, hh, dir) {
       return { x: cx - hw * 0.9, y: cy };
   }
 }
-function circlePort(cx, cy, w2, h, dir, offset) {
-  const r = Math.min(w2, h) / 2;
+function circlePort(cx, cy, w, h, dir, offset) {
+  const r = Math.min(w, h) / 2;
   if (r <= 0) {
     return { x: cx, y: cy };
   }
@@ -3188,36 +3227,46 @@ function reservePorts(_doc, prefs) {
   const used = new Map;
   const result = new Map;
   const partial = new Map;
-  const exitChoice = new Map;
-  for (const p2 of prefs) {
-    const exit = p2.exitPin ? { dir: p2.exitPin, semi: false } : pickCardinal(used, p2.fromNode.id, p2.exitPrefs, "exit");
-    exitChoice.set(p2.edgeKey, exit);
-    bumpUsed(used, p2.fromNode.id, exit.dir, "exit");
+  const predictedEntry = new Map;
+  for (const p of prefs) {
+    const dir = p.entryPin ? p.entryPin : p.entryPrefs[0] ?? "N";
+    predictedEntry.set(p.edgeKey, dir);
+    bumpUsed(used, p.toNode.id, dir, "entry");
   }
-  for (const p2 of prefs) {
-    const exit = exitChoice.get(p2.edgeKey);
-    const entry = p2.entryPin ? { dir: p2.entryPin, semi: false } : pickCardinal(used, p2.toNode.id, p2.entryPrefs, "entry");
-    partial.set(p2.edgeKey, {
+  const exitChoice = new Map;
+  for (const p of prefs) {
+    const exit = p.exitPin ? { dir: p.exitPin, semi: false } : pickCardinal(used, p.fromNode.id, p.exitPrefs, "exit");
+    exitChoice.set(p.edgeKey, exit);
+    bumpUsed(used, p.fromNode.id, exit.dir, "exit");
+  }
+  for (const p of prefs) {
+    const dir = predictedEntry.get(p.edgeKey);
+    decUsed(used, p.toNode.id, dir, "entry");
+  }
+  for (const p of prefs) {
+    const exit = exitChoice.get(p.edgeKey);
+    const entry = p.entryPin ? { dir: p.entryPin, semi: false } : pickCardinal(used, p.toNode.id, p.entryPrefs, "entry");
+    partial.set(p.edgeKey, {
       exitDir: exit.dir,
       entryDir: entry.dir,
       exitIsSemi: exit.semi,
       entryIsSemi: entry.semi
     });
-    bumpUsed(used, p2.toNode.id, entry.dir, "entry");
+    bumpUsed(used, p.toNode.id, entry.dir, "entry");
   }
   const cursor = new Map;
-  for (const p2 of prefs) {
-    const part = partial.get(p2.edgeKey);
+  for (const p of prefs) {
+    const part = partial.get(p.edgeKey);
     if (!part)
       continue;
-    const { fromNode, toNode } = p2;
+    const { fromNode, toNode } = p;
     const exitKey = bucketKey(fromNode.id, part.exitDir, "exit");
     const entryKey = bucketKey(toNode.id, part.entryDir, "entry");
     const ei = cursor.get(exitKey) ?? 0;
     const ni = cursor.get(entryKey) ?? 0;
     cursor.set(exitKey, ei + 1);
     cursor.set(entryKey, ni + 1);
-    result.set(p2.edgeKey, {
+    result.set(p.edgeKey, {
       exitDir: part.exitDir,
       entryDir: part.entryDir,
       exitIsSemi: part.exitIsSemi,
@@ -3298,6 +3347,14 @@ function bumpUsed(used, nodeId, dir, role) {
   const key = bucketKey(nodeId, dir, role);
   used.set(key, (used.get(key) ?? 0) + 1);
 }
+function decUsed(used, nodeId, dir, role) {
+  const key = bucketKey(nodeId, dir, role);
+  const next = (used.get(key) ?? 0) - 1;
+  if (next <= 0)
+    used.delete(key);
+  else
+    used.set(key, next);
+}
 function bucketKey(nodeId, dir, role) {
   return `${nodeId}:${dir}:${role}`;
 }
@@ -3375,8 +3432,8 @@ function routeEdges(doc) {
     const toNode = doc.nodes.get(edge.to);
     if (!fromNode || !toNode)
       continue;
-    const key = `${edge.from}->${edge.to}`;
-    const overrideExit = decisionExitDir.get(edgeId(i, edge));
+    const key = edgeId(i, edge);
+    const overrideExit = decisionExitDir.get(key);
     let result;
     const isSkip = gridMeta?.skipEdges.has(edgeId(i, edge));
     if (edge.from === edge.to) {
@@ -3420,44 +3477,44 @@ function routeSelfLoop(edge, node, cornerRadius, overrideExit) {
   const entry = ports.top;
   let waypoints;
   if (exitDir === "E") {
-    const x2 = exit.x + margin;
+    const x = exit.x + margin;
     const y = exit.y - margin;
     waypoints = [
       exit,
-      { x: x2, y: exit.y },
-      { x: x2, y },
+      { x, y: exit.y },
+      { x, y },
       { x: entry.x, y },
       entry
     ];
   } else if (exitDir === "W") {
-    const x2 = exit.x - margin;
+    const x = exit.x - margin;
     const y = exit.y - margin;
     waypoints = [
       exit,
-      { x: x2, y: exit.y },
-      { x: x2, y },
+      { x, y: exit.y },
+      { x, y },
       { x: entry.x, y },
       entry
     ];
   } else if (exitDir === "S") {
     const y = exit.y + margin;
-    const x2 = exit.x + margin;
+    const x = exit.x + margin;
     waypoints = [
       exit,
       { x: exit.x, y },
-      { x: x2, y },
-      { x: x2, y: entry.y - margin },
+      { x, y },
+      { x, y: entry.y - margin },
       { x: entry.x, y: entry.y - margin },
       entry
     ];
   } else {
     const y = exit.y - margin;
-    const x2 = exit.x + margin;
+    const x = exit.x + margin;
     waypoints = [
       exit,
       { x: exit.x, y },
-      { x: x2, y },
-      { x: x2, y: entry.y },
+      { x, y },
+      { x, y: entry.y },
       entry
     ];
   }
@@ -3466,7 +3523,7 @@ function routeSelfLoop(edge, node, cornerRadius, overrideExit) {
   return {
     pathData,
     labelPosition,
-    waypoints: waypoints.map((p2) => ({ x: p2.x, y: p2.y })),
+    waypoints: waypoints.map((p) => ({ x: p.x, y: p.y })),
     yieldOnCross: edge.retry === true
   };
 }
@@ -3522,8 +3579,8 @@ function chooseScoredDirs(from, to, edge, overrideExit) {
   }
   const candidates = [];
   for (const ex of ["N", "S", "E", "W"]) {
-    for (const en2 of ["N", "S", "E", "W"]) {
-      candidates.push({ exit: ex, entry: en2 });
+    for (const en of ["N", "S", "E", "W"]) {
+      candidates.push({ exit: ex, entry: en });
     }
   }
   let best = candidates[0];
@@ -3664,7 +3721,7 @@ function routeGridLocal(edge, from, to, cornerRadius, meta, _channels, overrideE
   return {
     pathData,
     labelPosition: labelPos,
-    waypoints: waypoints.map((p2) => ({ x: p2.x, y: p2.y })),
+    waypoints: waypoints.map((p) => ({ x: p.x, y: p.y })),
     yieldOnCross: edge.retry === true
   };
 }
@@ -3688,16 +3745,16 @@ function applyReservationSpread(node, dir, reserved, role) {
   const idx = role === "exit" ? reserved.exitIndex : reserved.entryIndex;
   const isSemi = role === "exit" ? reserved.exitIsSemi : reserved.entryIsSemi;
   if (isSemi) {
-    const w2 = node.width ?? 180;
+    const w = node.width ?? 180;
     const h = node.height ?? 44;
     const axis = dir === "N" || dir === "S" ? "V" : "H";
     const semiDir = role === "exit" ? reserved.exitDir : reserved.entryDir;
-    const { cardinal, offset: offset2 } = semiCardinalToCardinal(semiDir, axis, w2, h);
+    const { cardinal, offset } = semiCardinalToCardinal(semiDir, axis, w, h);
     if (total <= 1)
-      return getPortForNodeShape(node, cardinal, offset2);
-    const span = cardinal === "N" || cardinal === "S" ? w2 * 0.2 : h * 0.2;
+      return getPortForNodeShape(node, cardinal, offset);
+    const span = cardinal === "N" || cardinal === "S" ? w * 0.2 : h * 0.2;
     const tweak = (idx / Math.max(1, total - 1) - 0.5) * span;
-    return getPortForNodeShape(node, cardinal, offset2 + tweak);
+    return getPortForNodeShape(node, cardinal, offset + tweak);
   }
   if (total <= 1)
     return;
@@ -3788,20 +3845,35 @@ function routeGridSkip(edge, from, to, cornerRadius, meta, channels, _doc, edgeI
     entry = entrySpread;
   exitFinalDir = resolvedExitDir;
   let finalEntryDir = resolvedEntryDir;
-  if (fromSide === 0 && toSide === 0 && exitFinalDir !== exitDir) {
-    channelX = exitFinalDir === "E" ? channels.outerEast + spreadIdx * SPREAD : channels.outerWest - spreadIdx * SPREAD;
+  if (exitFinalDir !== exitDir) {
+    if (fromSide === 0 && toSide === 0) {
+      if (exitFinalDir === "E") {
+        channelX = channels.outerEast + spreadIdx * SPREAD;
+      } else if (exitFinalDir === "W") {
+        channelX = channels.outerWest - spreadIdx * SPREAD;
+      } else {
+        channelX = channels.outerEast + spreadIdx * SPREAD;
+      }
+    } else if ((exitFinalDir === "S" || exitFinalDir === "N") && fromSide === 0) {
+      channelX = toSide < 0 ? channels.outerWest - spreadIdx * SPREAD : channels.outerEast + spreadIdx * SPREAD;
+    }
+    let newEntryDir;
     if (channelX > (to.x ?? 0))
-      entryDir = "E";
+      newEntryDir = "E";
     else if (channelX < (to.x ?? 0))
-      entryDir = "W";
+      newEntryDir = "W";
     else
-      entryDir = exitFinalDir === "E" ? "W" : "E";
+      newEntryDir = exitFinalDir === "E" ? "W" : "E";
     if (usingSouthEntry)
-      entryDir = "S";
+      newEntryDir = "S";
     if (usingTopEntry)
-      entryDir = "N";
-    finalEntryDir = entryDir;
-    entry = portForReserved(to, finalEntryDir, null, "entry", finalEntryDir);
+      newEntryDir = "N";
+    if (newEntryDir !== finalEntryDir) {
+      finalEntryDir = newEntryDir;
+      entry = portForReserved(to, finalEntryDir, null, "entry", finalEntryDir);
+    } else {
+      finalEntryDir = newEntryDir;
+    }
   }
   {
     const nodeLeft = (to.x ?? 0) - (to.width ?? 180) / 2;
@@ -3821,7 +3893,8 @@ function routeGridSkip(edge, from, to, cornerRadius, meta, channels, _doc, edgeI
   if ((exitFinalDir === "E" || exitFinalDir === "W") && !wouldPierceHorizontal) {
     waypoints.push({ x: channelX, y: exit.y });
   } else {
-    const gapY = goingDown ? (from.y ?? 0) + (from.height ?? 44) / 2 + 30 : (from.y ?? 0) - (from.height ?? 44) / 2 - 30;
+    const exitGoesDown = exitFinalDir === "S";
+    const gapY = exitGoesDown ? (from.y ?? 0) + (from.height ?? 44) / 2 + 30 : (from.y ?? 0) - (from.height ?? 44) / 2 - 30;
     waypoints.push({ x: exit.x, y: gapY });
     waypoints.push({ x: channelX, y: gapY });
   }
@@ -3845,7 +3918,7 @@ function routeGridSkip(edge, from, to, cornerRadius, meta, channels, _doc, edgeI
   return {
     pathData,
     labelPosition,
-    waypoints: waypoints.map((p2) => ({ x: p2.x, y: p2.y })),
+    waypoints: waypoints.map((p) => ({ x: p.x, y: p.y })),
     yieldOnCross: edge.retry === true
   };
 }
@@ -3862,7 +3935,7 @@ function buildGridReservation(doc, meta, channels, decisionExitDir) {
     const ek = edgeId(i, edge);
     const overrideExit = decisionExitDir.get(ek);
     const isSkip = meta.skipEdges.has(ek);
-    const dirs = isSkip ? predictSkipDirs(edge, fromNode, toNode, meta, channels) : predictLocalDirs(edge, fromNode, toNode, meta, overrideExit);
+    const dirs = isSkip ? predictSkipDirs(edge, fromNode, toNode, meta, channels, overrideExit) : predictLocalDirs(edge, fromNode, toNode, meta, overrideExit);
     const dx = (toNode.x ?? 0) - (fromNode.x ?? 0);
     const dy = (toNode.y ?? 0) - (fromNode.y ?? 0);
     const nearExitH = dx >= 0 ? "E" : "W";
@@ -3871,10 +3944,23 @@ function buildGridReservation(doc, meta, channels, decisionExitDir) {
     const nearEntryV = dy >= 0 ? "N" : "S";
     const exitNear = dirs.exitDir === "N" || dirs.exitDir === "S" ? nearExitH : nearExitV;
     const entryNear = dirs.entryDir === "N" || dirs.entryDir === "S" ? nearEntryH : nearEntryV;
-    const exitPrefs = rankAround(dirs.exitDir, exitNear);
+    let exitPrefs = rankAround(dirs.exitDir, exitNear);
     const entryPrefs = rankAround(dirs.entryDir, entryNear);
+    if (isSkip && dy < 0 && (dirs.exitDir === "E" || dirs.exitDir === "W")) {
+      const sIdx = exitPrefs.indexOf("S");
+      const eIdx = exitPrefs.indexOf("E");
+      if (sIdx !== -1 && eIdx !== -1 && sIdx < eIdx) {
+        exitPrefs = [
+          ...exitPrefs.slice(0, sIdx),
+          exitPrefs[eIdx],
+          ...exitPrefs.slice(sIdx + 1, eIdx),
+          exitPrefs[sIdx],
+          ...exitPrefs.slice(eIdx + 1)
+        ];
+      }
+    }
     const exitPin = overrideExit && fromNode.shape === "decision" ? overrideExit : fromNode.shape === "decision" ? dirs.exitDir : undefined;
-    const entryPin = toNode.shape === "decision" ? dirs.entryDir : isSkip && dirs.entryDir === "S" ? "S" : undefined;
+    const entryPin = toNode.shape === "decision" ? dirs.entryDir : isSkip ? dirs.entryDir : undefined;
     prefs.push({
       edgeKey: ek,
       edge,
@@ -3893,7 +3979,7 @@ function rankAround(preferred, nearPerpendicular) {
   const perpendiculars = preferred === "N" || preferred === "S" ? ["E", "W"] : ["N", "S"];
   const near = nearPerpendicular && perpendiculars.includes(nearPerpendicular) ? nearPerpendicular : perpendiculars[0];
   const far = near === perpendiculars[0] ? perpendiculars[1] : perpendiculars[0];
-  return [preferred, opposite, near, far];
+  return [preferred, near, far, opposite];
 }
 function oppositeCardinal(d) {
   switch (d) {
@@ -3943,7 +4029,7 @@ function predictLocalDirs(edge, from, to, meta, overrideExit) {
   }
   return { exitDir, entryDir };
 }
-function predictSkipDirs(edge, from, to, meta, channels) {
+function predictSkipDirs(edge, from, to, meta, channels, overrideExit) {
   const fromCol = meta.nodeColumn.get(edge.from) ?? "main";
   const toCol = meta.nodeColumn.get(edge.to) ?? "main";
   const fromColInfo = meta.columns.get(fromCol);
@@ -3978,6 +4064,21 @@ function predictSkipDirs(edge, from, to, meta, channels) {
     exitDir = fromSide > 0 ? "E" : "W";
   } else if (from.shape !== "decision" && anyNodeBetweenSourceAndChannel(meta, edge.from, fromRow, exitDir, channelX)) {
     exitDir = goingDown ? "S" : "N";
+  }
+  if (from.shape === "decision" && overrideExit && fromSide === 0) {
+    exitDir = overrideExit;
+    if (exitDir === "S" || exitDir === "N") {
+      if (toSide < 0)
+        channelX = channels.outerWest;
+      else if (toSide > 0)
+        channelX = channels.outerEast;
+      else
+        channelX = channels.outerEast;
+    } else if (exitDir === "W") {
+      channelX = fromSide === 0 && toSide === 0 ? channels.outerWest : channels.west.get("main") ?? channels.outerWest;
+    } else {
+      channelX = fromSide === 0 && toSide === 0 ? channels.outerEast : channels.east.get("main") ?? channels.outerEast;
+    }
   }
   let entryDir;
   if (channelX > (to.x ?? 0))
@@ -4074,19 +4175,24 @@ function assignDecisionExits(doc) {
     const preferOrder = ["S", "E", "W", "N"];
     for (const { idx, edge } of branches) {
       const lc = (edge.condition ?? "").toLowerCase();
-      if (lc === "yes" || lc === "true") {
-        const to = doc.nodes.get(edge.to);
-        const dy = (to?.y ?? 0) - (from.y ?? 0);
-        if (dy >= 0) {
-          out.set(edgeId(idx, edge), "S");
-          used.add("S");
-        } else {
-          const dx = (to?.x ?? 0) - (from.x ?? 0);
-          const pick = dx <= 0 ? "W" : "E";
-          out.set(edgeId(idx, edge), pick);
-          used.add(pick);
-        }
-      }
+      if (lc !== "yes" && lc !== "true")
+        continue;
+      const to = doc.nodes.get(edge.to);
+      const dx = (to?.x ?? 0) - (from.x ?? 0);
+      const dy = (to?.y ?? 0) - (from.y ?? 0);
+      const score = (d) => {
+        if (d === "S")
+          return dy;
+        if (d === "N")
+          return -dy;
+        if (d === "E")
+          return dx;
+        return -dx;
+      };
+      const ranked = ["S", "E", "W"].filter((d) => !used.has(d)).sort((a, b) => score(b) - score(a));
+      const pick = ranked[0] ?? preferOrder.find((d) => !used.has(d)) ?? "S";
+      out.set(edgeId(idx, edge), pick);
+      used.add(pick);
     }
     for (const { idx, edge } of branches) {
       if (out.has(edgeId(idx, edge)))
@@ -4226,7 +4332,7 @@ function routeCardinal(edge, from, to, cornerRadius, portUsage, portIndex, edgeI
   return {
     pathData,
     labelPosition: labelPos,
-    waypoints: waypoints.map((p2) => ({ x: p2.x, y: p2.y })),
+    waypoints: waypoints.map((p) => ({ x: p.x, y: p.y })),
     yieldOnCross: edge.retry === true
   };
 }
@@ -4242,7 +4348,7 @@ function routeOrthogonal(edge, from, to, cornerRadius, overrideExit) {
   return {
     pathData,
     labelPosition: labelPos,
-    waypoints: waypoints.map((p2) => ({ x: p2.x, y: p2.y })),
+    waypoints: waypoints.map((p) => ({ x: p.x, y: p.y })),
     yieldOnCross: edge.retry === true
   };
 }
@@ -4376,7 +4482,7 @@ function getPathMidpoint(points) {
   let targetLen = totalLen / 2;
   for (let i = 0;i < segLens.length; i++) {
     if (targetLen <= segLens[i]) {
-      const t = targetLen / segLens[i];
+      const t = segLens[i] > 0 ? targetLen / segLens[i] : 0;
       return {
         x: Math.round(points[i].x + (points[i + 1].x - points[i].x) * t),
         y: Math.round(points[i].y + (points[i + 1].y - points[i].y) * t)
@@ -4392,7 +4498,7 @@ function applyLineJumps(doc, routes, cornerRadius) {
   const ordered = [];
   for (let i = 0;i < doc.edges.length; i++) {
     const edge = doc.edges[i];
-    const key = `${edge.from}->${edge.to}`;
+    const key = edgeId(i, edge);
     const route = routes.get(key);
     if (!route?.waypoints || route.waypoints.length < 2)
       continue;
@@ -4400,9 +4506,9 @@ function applyLineJumps(doc, routes, cornerRadius) {
   }
   const jumpsForEdge = new Map;
   for (let i = 0;i < ordered.length; i++) {
-    for (let j2 = i + 1;j2 < ordered.length; j2++) {
+    for (let j = i + 1;j < ordered.length; j++) {
       const a = ordered[i];
-      const b = ordered[j2];
+      const b = ordered[j];
       const aYields = !!a.route.yieldOnCross;
       const bYields = !!b.route.yieldOnCross;
       let yielder = b;
@@ -4464,30 +4570,30 @@ function findOrthogonalCrossings(aSegs, bSegs) {
       if (a.axis === b.axis)
         continue;
       const h = a.axis === "H" ? a : b;
-      const v2 = a.axis === "V" ? a : b;
+      const v = a.axis === "V" ? a : b;
       const y = h.y1;
-      const x2 = v2.x1;
+      const x = v.x1;
       const hMinX = Math.min(h.x1, h.x2);
       const hMaxX = Math.max(h.x1, h.x2);
-      const vMinY = Math.min(v2.y1, v2.y2);
-      const vMaxY = Math.max(v2.y1, v2.y2);
+      const vMinY = Math.min(v.y1, v.y2);
+      const vMaxY = Math.max(v.y1, v.y2);
       const eps = 0.5;
-      if (x2 <= hMinX + eps || x2 >= hMaxX - eps)
+      if (x <= hMinX + eps || x >= hMaxX - eps)
         continue;
       if (y <= vMinY + eps || y >= vMaxY - eps)
         continue;
-      if (sharesEndpoint(a, b, x2, y))
+      if (sharesEndpoint(a, b, x, y))
         continue;
-      out.push({ x: x2, y, aSegIdx: ai, bSegIdx: bi });
+      out.push({ x, y, aSegIdx: ai, bSegIdx: bi });
     }
   }
   return out;
 }
-function sharesEndpoint(a, b, x2, y) {
+function sharesEndpoint(a, b, x, y) {
   for (const ea of a.endpoints) {
     for (const eb of b.endpoints) {
       if (Math.abs(ea.x - eb.x) < 1 && Math.abs(ea.y - eb.y) < 1) {
-        if (Math.abs(x2 - ea.x) < 2 && Math.abs(y - ea.y) < 2)
+        if (Math.abs(x - ea.x) < 2 && Math.abs(y - ea.y) < 2)
           return true;
         return true;
       }
@@ -4495,12 +4601,12 @@ function sharesEndpoint(a, b, x2, y) {
   }
   return false;
 }
-function paramOnSegment(seg, x2, y) {
+function paramOnSegment(seg, x, y) {
   if (seg.axis === "H") {
-    const len2 = seg.x2 - seg.x1;
-    if (Math.abs(len2) < 0.5)
+    const len = seg.x2 - seg.x1;
+    if (Math.abs(len) < 0.5)
       return 0;
-    return (x2 - seg.x1) / len2;
+    return (x - seg.x1) / len;
   }
   const len = seg.y2 - seg.y1;
   if (Math.abs(len) < 0.5)
@@ -4511,13 +4617,13 @@ function waypointsToRoundedPathWithJumps(points, radius, jumps) {
   if (points.length < 2)
     return "";
   const jumpsBySeg = new Map;
-  for (const j2 of jumps) {
-    const list = jumpsBySeg.get(j2.segIdx) ?? [];
-    list.push({ t: j2.t, x: j2.x, y: j2.y });
-    jumpsBySeg.set(j2.segIdx, list);
+  for (const j of jumps) {
+    const list = jumpsBySeg.get(j.segIdx) ?? [];
+    list.push({ t: j.t, x: j.x, y: j.y });
+    jumpsBySeg.set(j.segIdx, list);
   }
   for (const [, list] of jumpsBySeg) {
-    list.sort((p2, q2) => p2.t - q2.t);
+    list.sort((p, q) => p.t - q.t);
   }
   let d = `M${points[0].x},${points[0].y}`;
   for (let i = 0;i < points.length - 1; i++) {
@@ -4568,7 +4674,7 @@ function el(tag, attrs = {}, ...children) {
 }
 function serializeToSVG(root, indent = 0) {
   const pad = "  ".repeat(indent);
-  const attrs = Object.entries(root.attrs).map(([k2, v2]) => `${k2}="${escapeAttr(String(v2))}"`).join(" ");
+  const attrs = Object.entries(root.attrs).map(([k, v]) => `${k}="${escapeAttr(String(v))}"`).join(" ");
   const openTag = attrs ? `<${root.tag} ${attrs}` : `<${root.tag}`;
   if (root.children.length === 0) {
     return `${pad}${openTag}/>`;
@@ -4604,10 +4710,10 @@ function renderNode(node, theme) {
   const textColor = node.style?.text ?? shapeStyle.textColor ?? theme.node.font.color;
   const cx = node.x ?? 0;
   const cy = node.y ?? 0;
-  const w2 = node.width ?? 180;
+  const w = node.width ?? 180;
   const h = node.height ?? 44;
-  const shapeEl = renderShapeBackground(node.shape, cx, cy, w2, h, fill, stroke, theme);
-  const textEl = renderLabel(node.label, cx, cy, w2, textColor, theme);
+  const shapeEl = renderShapeBackground(node.shape, cx, cy, w, h, fill, stroke, theme);
+  const textEl = renderLabel(node.label, cx, cy, w, textColor, theme);
   return el("g", {
     class: "fs-node",
     "data-node-id": node.id,
@@ -4615,16 +4721,16 @@ function renderNode(node, theme) {
     ...node.line !== undefined ? { "data-line": node.line } : {}
   }, ...theme.node.shadow ? [wrapWithShadow(shapeEl)] : [shapeEl], textEl);
 }
-function renderShapeBackground(shape, cx, cy, w2, h, fill, stroke, theme) {
+function renderShapeBackground(shape, cx, cy, w, h, fill, stroke, theme) {
   const sw = theme.node.strokeWidth;
   const r = theme.node.borderRadius;
   switch (shape) {
     case "start":
     case "end":
       return el("rect", {
-        x: cx - w2 / 2,
+        x: cx - w / 2,
         y: cy - h / 2,
-        width: w2,
+        width: w,
         height: h,
         rx: h / 2,
         fill,
@@ -4633,7 +4739,7 @@ function renderShapeBackground(shape, cx, cy, w2, h, fill, stroke, theme) {
       });
     case "decision":
       return el("polygon", {
-        points: `${cx},${cy - h / 2} ${cx + w2 / 2},${cy} ${cx},${cy + h / 2} ${cx - w2 / 2},${cy}`,
+        points: `${cx},${cy - h / 2} ${cx + w / 2},${cy} ${cx},${cy + h / 2} ${cx - w / 2},${cy}`,
         fill,
         stroke,
         "stroke-width": sw
@@ -4641,18 +4747,18 @@ function renderShapeBackground(shape, cx, cy, w2, h, fill, stroke, theme) {
     case "io": {
       const skew = 15;
       const points = [
-        `${cx - w2 / 2 + skew},${cy - h / 2}`,
-        `${cx + w2 / 2 + skew},${cy - h / 2}`,
-        `${cx + w2 / 2 - skew},${cy + h / 2}`,
-        `${cx - w2 / 2 - skew},${cy + h / 2}`
+        `${cx - w / 2 + skew},${cy - h / 2}`,
+        `${cx + w / 2 + skew},${cy - h / 2}`,
+        `${cx + w / 2 - skew},${cy + h / 2}`,
+        `${cx - w / 2 - skew},${cy + h / 2}`
       ].join(" ");
       return el("polygon", { points, fill, stroke, "stroke-width": sw });
     }
     case "data":
       return el("rect", {
-        x: cx - w2 / 2,
+        x: cx - w / 2,
         y: cy - h / 2,
-        width: w2,
+        width: w,
         height: h,
         rx: 4,
         fill,
@@ -4660,7 +4766,7 @@ function renderShapeBackground(shape, cx, cy, w2, h, fill, stroke, theme) {
         "stroke-width": sw
       });
     case "circle": {
-      const radius = Math.min(w2, h) / 2;
+      const radius = Math.min(w, h) / 2;
       return el("circle", {
         cx,
         cy,
@@ -4672,25 +4778,25 @@ function renderShapeBackground(shape, cx, cy, w2, h, fill, stroke, theme) {
     }
     case "subprocess":
       return el("g", {}, el("rect", {
-        x: cx - w2 / 2,
+        x: cx - w / 2,
         y: cy - h / 2,
-        width: w2,
+        width: w,
         height: h,
         rx: r,
         fill,
         stroke,
         "stroke-width": sw
       }), el("line", {
-        x1: cx - w2 / 2 + 8,
+        x1: cx - w / 2 + 8,
         y1: cy - h / 2,
-        x2: cx - w2 / 2 + 8,
+        x2: cx - w / 2 + 8,
         y2: cy + h / 2,
         stroke,
         "stroke-width": 0.8
       }), el("line", {
-        x1: cx + w2 / 2 - 8,
+        x1: cx + w / 2 - 8,
         y1: cy - h / 2,
-        x2: cx + w2 / 2 - 8,
+        x2: cx + w / 2 - 8,
         y2: cy + h / 2,
         stroke,
         "stroke-width": 0.8
@@ -4698,27 +4804,27 @@ function renderShapeBackground(shape, cx, cy, w2, h, fill, stroke, theme) {
     case "manual": {
       const inset = 12;
       const points = [
-        `${cx - w2 / 2},${cy - h / 2}`,
-        `${cx + w2 / 2},${cy - h / 2}`,
-        `${cx + w2 / 2 - inset},${cy + h / 2}`,
-        `${cx - w2 / 2 + inset},${cy + h / 2}`
+        `${cx - w / 2},${cy - h / 2}`,
+        `${cx + w / 2},${cy - h / 2}`,
+        `${cx + w / 2 - inset},${cy + h / 2}`,
+        `${cx - w / 2 + inset},${cy + h / 2}`
       ].join(" ");
       return el("polygon", { points, fill, stroke, "stroke-width": sw });
     }
     case "delay": {
-      const x2 = cx - w2 / 2;
+      const x = cx - w / 2;
       const y = cy - h / 2;
-      const rr2 = h / 2;
-      const d = `M${x2},${y} L${x2 + w2 - rr2},${y} A${rr2},${rr2} 0 0 1 ${x2 + w2 - rr2},${y + h} L${x2},${y + h} Z`;
+      const rr = h / 2;
+      const d = `M${x},${y} L${x + w - rr},${y} A${rr},${rr} 0 0 1 ${x + w - rr},${y + h} L${x},${y + h} Z`;
       return el("path", { d, fill, stroke, "stroke-width": sw });
     }
     case "note": {
-      const x2 = cx - w2 / 2;
+      const x = cx - w / 2;
       const y = cy - h / 2;
       const fold = 12;
-      const d = `M${x2},${y} L${x2 + w2 - fold},${y} L${x2 + w2},${y + fold} L${x2 + w2},${y + h} L${x2},${y + h} Z`;
+      const d = `M${x},${y} L${x + w - fold},${y} L${x + w},${y + fold} L${x + w},${y + h} L${x},${y + h} Z`;
       return el("g", {}, el("path", { d, fill, stroke, "stroke-width": sw }), el("path", {
-        d: `M${x2 + w2 - fold},${y} L${x2 + w2 - fold},${y + fold} L${x2 + w2},${y + fold}`,
+        d: `M${x + w - fold},${y} L${x + w - fold},${y + fold} L${x + w},${y + fold}`,
         fill: "none",
         stroke,
         "stroke-width": 0.8
@@ -4727,9 +4833,9 @@ function renderShapeBackground(shape, cx, cy, w2, h, fill, stroke, theme) {
     case "process":
     default:
       return el("rect", {
-        x: cx - w2 / 2,
+        x: cx - w / 2,
         y: cy - h / 2,
-        width: w2,
+        width: w,
         height: h,
         rx: r,
         fill,
@@ -5034,8 +5140,8 @@ function renderGroups(doc, theme) {
   return el("g", { class: "fs-groups" }, ...groupEls);
 }
 function renderEdges(doc, routes, theme) {
-  const edgeEls = doc.edges.map((edge) => {
-    const key = `${edge.from}->${edge.to}`;
+  const edgeEls = doc.edges.map((edge, i) => {
+    const key = edgeId(i, edge);
     const route = routes.get(key);
     if (!route)
       return el("g", {});
@@ -5092,7 +5198,7 @@ function renderEdges(doc, routes, theme) {
 }
 function renderNodes(doc, theme) {
   const nodeEls = [];
-  for (const [_2, node] of doc.nodes) {
+  for (const [_, node] of doc.nodes) {
     nodeEls.push(renderNode(node, theme));
   }
   return el("g", { class: "fs-nodes" }, ...nodeEls);
@@ -5107,7 +5213,7 @@ function calculateBounds(doc, routes, padding) {
       maxY = Math.max(maxY, wp.y);
     }
   }
-  for (const [_2, node] of doc.nodes) {
+  for (const [_, node] of doc.nodes) {
     if (node.x === undefined || node.y === undefined)
       continue;
     const hw = (node.width ?? 180) / 2;
@@ -5213,9 +5319,9 @@ function jsonToFlow(graph) {
   const sanitizeLabel = (label) => label.replace(/\r?\n/g, " ").trim();
   const decl = (id) => {
     const n = nodeById.get(id);
-    const k2 = kw(n.shape);
+    const k = kw(n.shape);
     const l = sanitizeLabel(n.label);
-    return k2 ? `${k2} ${l}` : l;
+    return k ? `${k} ${l}` : l;
   };
   const arrowStr = (e, label) => {
     const arr = e.retry ? "~>" : "->";
@@ -5230,7 +5336,7 @@ function jsonToFlow(graph) {
   let simPrev = null;
   const markDecl = (id) => declared.add(id);
   const breakChain = (fromId) => {
-    const outs = fwdEdges.filter((e2) => e2.from === fromId);
+    const outs = fwdEdges.filter((e) => e.from === fromId);
     if (outs.length === 0) {
       simPrev = null;
       return;
@@ -5468,14 +5574,14 @@ function render(source, options = {}) {
   });
 }
 export {
-  routeEdges as route,
-  resolveTheme,
-  renderSVG,
-  render,
-  parse,
-  listThemes,
-  layoutDocument as layout,
-  jsonToFlow,
+  cleanDarkTheme,
   cleanTheme,
-  cleanDarkTheme
+  jsonToFlow,
+  layoutDocument as layout,
+  listThemes,
+  parse,
+  render,
+  renderSVG,
+  resolveTheme,
+  routeEdges as route
 };

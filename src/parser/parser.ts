@@ -669,6 +669,19 @@ class Parser {
 
   // --- Style blocks ---
 
+  /**
+   * If a loop iteration consumed no tokens, consume one or throw so
+   * the parser cannot stall.
+   */
+  private guardProgress(loopStart: number): void {
+    if (this.pos > loopStart) return;
+    if (this.isAtEnd()) {
+      const t = this.peek();
+      throw new ParseError('parser made no progress', t.line, t.col);
+    }
+    this.advance();
+  }
+
   private tryParseStyle(): StyleOverrides | null {
     if (this.peek().type !== 'LBRACE') return null;
     this.advance(); // skip {
@@ -676,6 +689,8 @@ class Parser {
     const style: StyleOverrides = {};
 
     while (this.peek().type !== 'RBRACE' && !this.isAtEnd()) {
+      const loopStart = this.pos;
+
       // Expect key: value pairs
       if (this.peek().type === 'TEXT') {
         const key = this.advance().value;
@@ -695,6 +710,10 @@ class Parser {
       }
       if (this.peek().type === 'COMMA') this.advance();
       if (this.peek().type === 'NEWLINE') this.advance();
+
+      // Unexpected token (nested '{', a string as the first inner token, etc.):
+      // consume it so the loop cannot stall.
+      this.guardProgress(loopStart);
     }
 
     this.match('RBRACE');
